@@ -1,15 +1,16 @@
-import React, { useState, useEffect, useRef } from 'react';
-import {
-  Mic,
-  MicOff,
-  Volume2,
-  VolumeX,
-  Sparkles,
-  Zap,
+import React, { useState, useEffect, useRef, useCallback } from 'react';
+import { 
+  Mic, 
+  MicOff, 
+  Volume2, 
+  VolumeX, 
+  Sparkles, 
+  Zap, 
   ArrowLeft,
   RotateCcw,
   Bot,
-  Radio
+  Radio,
+  Send
 } from 'lucide-react';
 import { ModelDropdown } from './ModelDropdown';
 import { ThinkingBlock, parseThinkingContent } from './ThinkingBlock';
@@ -35,11 +36,12 @@ export const VoiceAssistantView: React.FC<VoiceAssistantViewProps> = ({ onBackTo
   const [isSpeaking, setIsSpeaking] = useState(false);
   const [voiceSpeechEnabled, setVoiceSpeechEnabled] = useState(true);
   const [currentTranscript, setCurrentTranscript] = useState('');
+  const [textInput, setTextInput] = useState('');
   const [dialogue, setDialogue] = useState<DialogueMessage[]>([
     {
       id: 'd-welcome',
       role: 'assistant',
-      content: 'Hello! I am Kyro, your voice assistant. Say any desktop command like "Open Chrome" or ask me a question and I will answer with live speech.',
+      content: 'Hello Danish! I am Kyro, your autonomous voice desktop assistant. Speak any desktop command like "Open Chrome" or ask me a question and I will answer.',
       time: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
     },
   ]);
@@ -47,12 +49,29 @@ export const VoiceAssistantView: React.FC<VoiceAssistantViewProps> = ({ onBackTo
   const [selectedProvider, setSelectedProvider] = useState('ollama');
   const [lastAction, setLastAction] = useState<string | null>(null);
 
+  const isListeningRef = useRef(true);
+  const isSpeakingRef = useRef(false);
+  const selectedProviderRef = useRef('ollama');
   const recognitionRef = useRef<any>(null);
   const audioContextRef = useRef<AudioContext | null>(null);
   const analyserRef = useRef<AnalyserNode | null>(null);
   const micStreamRef = useRef<MediaStream | null>(null);
   const animationFrameRef = useRef<number | null>(null);
   const dialogueEndRef = useRef<HTMLDivElement>(null);
+  const silenceTimerRef = useRef<any>(null);
+  const accumulatedTranscriptRef = useRef('');
+
+  useEffect(() => {
+    isListeningRef.current = isListening;
+  }, [isListening]);
+
+  useEffect(() => {
+    isSpeakingRef.current = isSpeaking;
+  }, [isSpeaking]);
+
+  useEffect(() => {
+    selectedProviderRef.current = selectedProvider;
+  }, [selectedProvider]);
 
   const scrollToBottom = () => {
     dialogueEndRef.current?.scrollIntoView({ behavior: 'smooth' });
@@ -62,7 +81,7 @@ export const VoiceAssistantView: React.FC<VoiceAssistantViewProps> = ({ onBackTo
     scrollToBottom();
   }, [dialogue, currentTranscript]);
 
-  // Audio Visualizer setup using Web Audio API
+  // Web Audio API Visualizer Setup
   useEffect(() => {
     let active = true;
 
@@ -85,23 +104,30 @@ export const VoiceAssistantView: React.FC<VoiceAssistantViewProps> = ({ onBackTo
 
         const updateLevel = () => {
           if (!active) return;
-          if (analyserRef.current) {
+          if (analyserRef.current && isListeningRef.current) {
             analyserRef.current.getByteFrequencyData(dataArray);
             let sum = 0;
             for (let i = 0; i < dataArray.length; i++) {
               sum += dataArray[i];
             }
             const avg = sum / dataArray.length;
-            const normalized = Math.min(1, avg / 70);
+            const normalized = Math.min(1, avg / 60);
             setAudioLevel(normalized);
+          } else {
+            setAudioLevel(0);
           }
           animationFrameRef.current = requestAnimationFrame(updateLevel);
         };
         updateLevel();
       } catch {
+        // Fallback simulation if mic stream permission is blocked
         const interval = setInterval(() => {
           if (!active) return;
-          setAudioLevel(Math.random() * 0.35 + 0.1);
+          if (isListeningRef.current) {
+            setAudioLevel(Math.random() * 0.35 + 0.1);
+          } else {
+            setAudioLevel(0);
+          }
         }, 120);
         return () => clearInterval(interval);
       }
@@ -116,105 +142,55 @@ export const VoiceAssistantView: React.FC<VoiceAssistantViewProps> = ({ onBackTo
         micStreamRef.current.getTracks().forEach((track) => track.stop());
       }
       if (audioContextRef.current) {
-        audioContextRef.current.close().catch(() => { });
+        audioContextRef.current.close().catch(() => {});
       }
     };
   }, []);
 
-  // Web Speech API continuous recognition
-  useEffect(() => {
-    const SpeechRecognition =
-      (window as any).SpeechRecognition || (window as any).webkitSpeechRecognition;
-
-    if (SpeechRecognition) {
-      const recognition = new SpeechRecognition();
-      recognition.continuous = true;
-      recognition.interimResults = true;
-      recognition.lang = 'en-US';
-
-      recognition.onresult = (event: any) => {
-        let finalTranscript = '';
-        let interimTranscript = '';
-
-        for (let i = event.resultIndex; i < event.results.length; ++i) {
-          if (event.results[i].isFinal) {
-            finalTranscript += event.results[i][0].transcript;
-          } else {
-            interimTranscript += event.results[i][0].transcript;
-          }
-        }
-
-        const currentText = (finalTranscript || interimTranscript).trim();
-        if (currentText) {
-          setCurrentTranscript(currentText);
-        }
-
-        if (finalTranscript.trim()) {
-          handleVoiceCommand(finalTranscript.trim());
-          setCurrentTranscript('');
-        }
-      };
-
-      recognition.onerror = () => {
-        setIsListening(false);
-      };
-
-      recognition.onend = () => {
-        if (isListening) {
-          try {
-            recognition.start();
-          } catch { }
-        }
-      };
-
-      recognitionRef.current = recognition;
-
-      if (isListening) {
-        try {
-          recognition.start();
-        } catch { }
-      }
-    }
-
-    return () => {
-      if (recognitionRef.current) {
-        try {
-          recognitionRef.current.stop();
-        } catch { }
-      }
-    };
-  }, [isListening, selectedProvider]);
-
-  const speakText = (text: string) => {
+  const speakText = useCallback((text: string) => {
     if (!voiceSpeechEnabled || !window.speechSynthesis) return;
 
-    // Clean out <think> tags before speaking
+    // Filter out <think> tags from speech output
     const parsed = parseThinkingContent(text);
-    const spokenContent = (parsed.answer || text).replace(/<think>[\s\S]*?<\/think>/gi, '').trim();
+    const spokenContent = (parsed.answer || text)
+      .replace(/<think>[\s\S]*?<\/think>/gi, '')
+      .replace(/[*#`_~]/g, '')
+      .trim();
 
     if (!spokenContent) return;
 
     window.speechSynthesis.cancel();
     setIsSpeaking(true);
+    isSpeakingRef.current = true;
 
-    const utterance = new SpeechSynthesisUtterance(spokenContent.slice(0, 300));
+    const utterance = new SpeechSynthesisUtterance(spokenContent.slice(0, 350));
     utterance.rate = 1.05;
     utterance.pitch = 1.0;
 
-    utterance.onend = () => setIsSpeaking(false);
-    utterance.onerror = () => setIsSpeaking(false);
+    utterance.onend = () => {
+      setIsSpeaking(false);
+      isSpeakingRef.current = false;
+    };
+    utterance.onerror = () => {
+      setIsSpeaking(false);
+      isSpeakingRef.current = false;
+    };
 
     window.speechSynthesis.speak(utterance);
-  };
+  }, [voiceSpeechEnabled]);
 
-  const handleVoiceCommand = async (text: string) => {
+  const handleVoiceCommand = useCallback(async (text: string) => {
     if (!text.trim()) return;
+
+    const queryText = text.trim();
+    setCurrentTranscript('');
+    accumulatedTranscriptRef.current = '';
 
     const userMsgId = `u-${Date.now()}`;
     const userMsg: DialogueMessage = {
       id: userMsgId,
       role: 'user',
-      content: text,
+      content: queryText,
       time: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
     };
 
@@ -222,7 +198,7 @@ export const VoiceAssistantView: React.FC<VoiceAssistantViewProps> = ({ onBackTo
     const assistantPlaceholder: DialogueMessage = {
       id: assistantMsgId,
       role: 'assistant',
-      content: '<think>Analyzing user request and formulating optimal response...</think>',
+      content: '<think>Processing query and preparing answer...</think>',
       time: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
       isStreaming: true,
     };
@@ -231,21 +207,22 @@ export const VoiceAssistantView: React.FC<VoiceAssistantViewProps> = ({ onBackTo
     setLastAction(null);
 
     try {
-      // 1. Fast Command Router for Desktop Actions
-      const cmdResult = await executeCommand(text, selectedProvider);
+      // 1. Fast Command Router
+      const currentProv = selectedProviderRef.current;
+      const cmdResult = await executeCommand(queryText, currentProv);
 
       if (cmdResult.intent_type !== 'AI_QUERY' && !cmdResult.stream_needed) {
         setDialogue((prev) =>
           prev.map((msg) =>
             msg.id === assistantMsgId
               ? {
-                ...msg,
-                content: cmdResult.text_response,
-                intent: cmdResult.intent_type,
-                action: cmdResult.action_executed,
-                latency: cmdResult.execution_time_ms,
-                isStreaming: false,
-              }
+                  ...msg,
+                  content: cmdResult.text_response,
+                  intent: cmdResult.intent_type,
+                  action: cmdResult.action_executed,
+                  latency: cmdResult.execution_time_ms,
+                  isStreaming: false,
+                }
               : msg
           )
         );
@@ -254,22 +231,22 @@ export const VoiceAssistantView: React.FC<VoiceAssistantViewProps> = ({ onBackTo
         return;
       }
 
-      // 2. Stream Knowledge / LLM query
+      // 2. Stream AI response
       let fullAnswer = '';
       await streamChatMessage(
-        [{ role: 'user', content: text }],
-        selectedProvider,
+        [{ role: 'user', content: queryText }],
+        currentProv,
         (chunk) => {
           fullAnswer += chunk;
           setDialogue((prev) =>
             prev.map((msg) =>
               msg.id === assistantMsgId
                 ? {
-                  ...msg,
-                  content: fullAnswer,
-                  intent: 'AI_QUERY',
-                  isStreaming: true,
-                }
+                    ...msg,
+                    content: fullAnswer,
+                    intent: 'AI_QUERY',
+                    isStreaming: true,
+                  }
                 : msg
             )
           );
@@ -298,23 +275,144 @@ export const VoiceAssistantView: React.FC<VoiceAssistantViewProps> = ({ onBackTo
       setDialogue((prev) =>
         prev.map((msg) =>
           msg.id === assistantMsgId
-            ? { ...msg, content: `Failed: ${err.message}`, isStreaming: false }
+            ? { ...msg, content: `Error: ${err.message}`, isStreaming: false }
             : msg
         )
       );
     }
-  };
+  }, [speakText]);
 
+  // Web Speech API Continuous Recognition with Silence Detection
+  useEffect(() => {
+    const SpeechRecognition =
+      (window as any).SpeechRecognition || (window as any).webkitSpeechRecognition;
+
+    if (SpeechRecognition) {
+      const recognition = new SpeechRecognition();
+      recognition.continuous = true;
+      recognition.interimResults = true;
+      recognition.lang = 'en-US';
+
+      recognition.onresult = (event: any) => {
+        // If muted or Kyro is speaking, ignore to avoid feedback loop
+        if (!isListeningRef.current || isSpeakingRef.current) return;
+
+        let finalPart = '';
+        let interimPart = '';
+
+        for (let i = event.resultIndex; i < event.results.length; ++i) {
+          if (event.results[i].isFinal) {
+            finalPart += event.results[i][0].transcript;
+          } else {
+            interimPart += event.results[i][0].transcript;
+          }
+        }
+
+        const heardText = (finalPart || interimPart).trim();
+        if (heardText) {
+          accumulatedTranscriptRef.current = heardText;
+          setCurrentTranscript(heardText);
+
+          // Clear previous silence timer
+          if (silenceTimerRef.current) {
+            clearTimeout(silenceTimerRef.current);
+          }
+
+          // If final or silence detected after 900ms of user stopping speech, execute!
+          if (finalPart.trim()) {
+            handleVoiceCommand(finalPart.trim());
+          } else {
+            silenceTimerRef.current = setTimeout(() => {
+              if (accumulatedTranscriptRef.current.trim() && isListeningRef.current && !isSpeakingRef.current) {
+                handleVoiceCommand(accumulatedTranscriptRef.current.trim());
+              }
+            }, 900);
+          }
+        }
+      };
+
+      recognition.onerror = (e: any) => {
+        if (e.error !== 'no-speech') {
+          console.warn('Speech recognition error:', e.error);
+        }
+      };
+
+      recognition.onend = () => {
+        // Auto restart if unmuted
+        if (isListeningRef.current) {
+          try {
+            recognition.start();
+          } catch {}
+        }
+      };
+
+      recognitionRef.current = recognition;
+
+      if (isListeningRef.current) {
+        try {
+          recognition.start();
+        } catch {}
+      }
+    }
+
+    return () => {
+      if (silenceTimerRef.current) clearTimeout(silenceTimerRef.current);
+      if (recognitionRef.current) {
+        try {
+          recognitionRef.current.stop();
+        } catch {}
+      }
+    };
+  }, [handleVoiceCommand]);
+
+  // Toggle Microphone Mute / Unmute
   const toggleMic = () => {
     if (isListening) {
-      if (recognitionRef.current) recognitionRef.current.stop();
+      // MUTE
       setIsListening(false);
+      isListeningRef.current = false;
+      setCurrentTranscript('');
+      accumulatedTranscriptRef.current = '';
+      if (silenceTimerRef.current) clearTimeout(silenceTimerRef.current);
+
+      // Stop recognition
+      if (recognitionRef.current) {
+        try {
+          recognitionRef.current.stop();
+        } catch {}
+      }
+
+      // Disable hardware mic stream track
+      if (micStreamRef.current) {
+        micStreamRef.current.getAudioTracks().forEach((track) => {
+          track.enabled = false;
+        });
+      }
+
+      // Cancel speech synthesis
+      if (window.speechSynthesis) {
+        window.speechSynthesis.cancel();
+      }
+      setIsSpeaking(false);
+      isSpeakingRef.current = false;
+      setAudioLevel(0);
     } else {
+      // UNMUTE
       setIsListening(true);
+      isListeningRef.current = true;
+
+      // Enable hardware mic stream track
+      if (micStreamRef.current) {
+        micStreamRef.current.getAudioTracks().forEach((track) => {
+          track.enabled = true;
+        });
+      }
+
+      // Restart recognition
       if (recognitionRef.current) {
         try {
           recognitionRef.current.start();
-        } catch { }
+        } catch {}
       }
     }
   };
@@ -322,6 +420,7 @@ export const VoiceAssistantView: React.FC<VoiceAssistantViewProps> = ({ onBackTo
   const clearDialogue = () => {
     setDialogue([]);
     setCurrentTranscript('');
+    accumulatedTranscriptRef.current = '';
     setLastAction(null);
   };
 
@@ -331,7 +430,7 @@ export const VoiceAssistantView: React.FC<VoiceAssistantViewProps> = ({ onBackTo
 
   return (
     <div className="flex-1 flex flex-col p-6 select-none relative overflow-hidden font-sans h-full">
-
+      
       {/* Top Header Bar */}
       <div className="w-full flex items-center justify-between pb-4 border-b border-[#EBE5DC]/80 z-20 shrink-0">
         <div className="flex items-center gap-3">
@@ -359,11 +458,19 @@ export const VoiceAssistantView: React.FC<VoiceAssistantViewProps> = ({ onBackTo
 
           <button
             type="button"
-            onClick={() => setVoiceSpeechEnabled(!voiceSpeechEnabled)}
-            className={`p-2 rounded-full border text-xs transition-all cursor-pointer shadow-sm ${voiceSpeechEnabled
-              ? 'bg-[#FEF3C7] text-[#D97706] border-[#FDE68A]'
-              : 'bg-[#FFFFFF] text-[#A1A1AA] border-[#EAE4DB]'
-              }`}
+            onClick={() => {
+              const next = !voiceSpeechEnabled;
+              setVoiceSpeechEnabled(next);
+              if (!next && window.speechSynthesis) {
+                window.speechSynthesis.cancel();
+                setIsSpeaking(false);
+              }
+            }}
+            className={`p-2 rounded-full border text-xs transition-all cursor-pointer shadow-sm ${
+              voiceSpeechEnabled
+                ? 'bg-[#FEF3C7] text-[#D97706] border-[#FDE68A]'
+                : 'bg-[#FFFFFF] text-[#A1A1AA] border-[#EAE4DB]'
+            }`}
             title="Toggle Voice Output"
           >
             {voiceSpeechEnabled ? <Volume2 className="w-4 h-4" /> : <VolumeX className="w-4 h-4" />}
@@ -373,15 +480,15 @@ export const VoiceAssistantView: React.FC<VoiceAssistantViewProps> = ({ onBackTo
 
       {/* Main Split Layout: Left Voice Visualizer + Right Conversation Column */}
       <div className="flex-1 grid grid-cols-1 lg:grid-cols-12 gap-6 pt-6 overflow-hidden min-h-0">
-
+        
         {/* LEFT SIDE: Vibrating Organic Voice Sphere & Audio Waves (5 Columns) */}
         <div className="lg:col-span-5 flex flex-col items-center justify-between p-6 bg-[#FFFFFF]/60 backdrop-blur-md rounded-2xl border border-[#EAE4DB] shadow-soft relative overflow-hidden">
-
+          
           {/* Ambient Radial Waves in Background */}
-          <div
+          <div 
             className="absolute w-72 h-72 rounded-full transition-all duration-300 pointer-events-none opacity-40 blur-3xl"
             style={{
-              background: isSpeaking
+              background: isSpeaking 
                 ? 'radial-gradient(circle, rgba(217, 119, 6, 0.8) 0%, rgba(245, 158, 11, 0.4) 50%, transparent 70%)'
                 : 'radial-gradient(circle, rgba(249, 115, 22, 0.6) 0%, rgba(251, 191, 36, 0.3) 50%, transparent 70%)',
               transform: `scale(${orbScale * 1.5})`,
@@ -391,7 +498,7 @@ export const VoiceAssistantView: React.FC<VoiceAssistantViewProps> = ({ onBackTo
           {/* Top Status Pill */}
           <div className="z-10">
             <div className="inline-flex items-center gap-2 px-3.5 py-1.5 rounded-full bg-[#FFFFFF] border border-[#EAE4DB] shadow-sm text-xs font-semibold text-[#18181B]">
-              <span className={`w-2.5 h-2.5 rounded-full ${isSpeaking ? 'bg-[#D97706] animate-ping' : isListening ? 'bg-[#22C55E] animate-pulse' : 'bg-[#71717A]'}`} />
+              <span className={`w-2.5 h-2.5 rounded-full ${isSpeaking ? 'bg-[#D97706] animate-ping' : isListening ? (currentTranscript ? 'bg-[#D97706] animate-pulse' : 'bg-[#22C55E] animate-pulse') : 'bg-[#EF4444]'}`} />
               <span>
                 {isSpeaking ? 'Kyro Speaking...' : isListening ? (currentTranscript ? 'Hearing you...' : 'Listening to your voice...') : 'Microphone Muted'}
               </span>
@@ -405,7 +512,7 @@ export const VoiceAssistantView: React.FC<VoiceAssistantViewProps> = ({ onBackTo
               className="absolute w-56 h-56 rounded-full border border-[#D97706]/30 transition-all duration-150 animate-pulse pointer-events-none"
               style={{
                 transform: `scale(${1 + audioLevel * 0.5})`,
-                borderColor: isSpeaking ? 'rgba(217, 119, 6, 0.7)' : 'rgba(234, 88, 12, 0.35)',
+                borderColor: isSpeaking ? 'rgba(217, 119, 6, 0.7)' : isListening ? 'rgba(234, 88, 12, 0.35)' : 'rgba(150, 150, 150, 0.2)',
               }}
             />
 
@@ -424,8 +531,12 @@ export const VoiceAssistantView: React.FC<VoiceAssistantViewProps> = ({ onBackTo
                 transform: `scale(${orbScale})`,
                 background: isSpeaking
                   ? 'linear-gradient(135deg, #F59E0B 0%, #D97706 50%, #B45309 100%)'
-                  : 'linear-gradient(135deg, #18181B 0%, #27272A 50%, #3F3F46 100%)',
-                boxShadow: `0 0 ${orbGlow}px rgba(217, 119, 6, ${0.4 + audioLevel * 0.5})`,
+                  : isListening
+                  ? 'linear-gradient(135deg, #18181B 0%, #27272A 50%, #3F3F46 100%)'
+                  : 'linear-gradient(135deg, #7F1D1D 0%, #991B1B 50%, #DC2626 100%)',
+                boxShadow: isListening
+                  ? `0 0 ${orbGlow}px rgba(217, 119, 6, ${0.4 + audioLevel * 0.5})`
+                  : '0 0 20px rgba(239, 68, 68, 0.3)',
               }}
             >
               {/* Internal Audio Reactive Waveform Bars */}
@@ -437,8 +548,8 @@ export const VoiceAssistantView: React.FC<VoiceAssistantViewProps> = ({ onBackTo
                       key={idx}
                       className="w-1.5 rounded-full bg-white transition-all duration-75"
                       style={{
-                        height: `${Math.max(6, Math.min(42, barHeight))}px`,
-                        opacity: isListening || isSpeaking ? 0.95 : 0.4,
+                        height: isListening ? `${Math.max(6, Math.min(42, barHeight))}px` : '4px',
+                        opacity: isListening || isSpeaking ? 0.95 : 0.3,
                       }}
                     />
                   );
@@ -460,10 +571,11 @@ export const VoiceAssistantView: React.FC<VoiceAssistantViewProps> = ({ onBackTo
               <button
                 type="button"
                 onClick={toggleMic}
-                className={`w-full py-2.5 rounded-xl text-xs font-bold flex items-center justify-center gap-2 transition-all cursor-pointer shadow-sm ${isListening
-                  ? 'bg-[#18181B] text-white hover:bg-[#27272A]'
-                  : 'bg-[#EF4444] text-white hover:bg-[#DC2626]'
-                  }`}
+                className={`w-full py-2.5 rounded-xl text-xs font-bold flex items-center justify-center gap-2 transition-all cursor-pointer shadow-sm ${
+                  isListening
+                    ? 'bg-[#18181B] text-white hover:bg-[#27272A]'
+                    : 'bg-[#EF4444] text-white hover:bg-[#DC2626]'
+                }`}
               >
                 {isListening ? <Mic className="w-4 h-4" /> : <MicOff className="w-4 h-4" />}
                 <span>{isListening ? 'Mute Microphone' : 'Unmute Microphone'}</span>
@@ -472,9 +584,9 @@ export const VoiceAssistantView: React.FC<VoiceAssistantViewProps> = ({ onBackTo
           </div>
         </div>
 
-        {/* RIGHT SIDE: Live Conversation Timeline with Collapsible Thoughts (7 Columns) */}
+        {/* RIGHT SIDE: Live Conversation Timeline (7 Columns) */}
         <div className="lg:col-span-7 flex flex-col bg-[#FFFFFF] rounded-2xl border border-[#EAE4DB] shadow-card overflow-hidden">
-
+          
           {/* Conversation Header */}
           <div className="h-12 px-5 border-b border-[#F4EFEA] flex items-center justify-between shrink-0 bg-[#FAF7F2]/50">
             <div className="flex items-center gap-2">
@@ -509,7 +621,7 @@ export const VoiceAssistantView: React.FC<VoiceAssistantViewProps> = ({ onBackTo
                   </div>
 
                   {/* Bubble Content Card */}
-                  <div className="bg-[#EFF6FF] border border-[#DBEAFE] text-[#1E3A8A] rounded-lg px-4 py-3 text-xs leading-relaxed shadow-xs w-auto max-w-[70%]">
+                  <div className="bg-[#EFF6FF] border border-[#DBEAFE] text-[#1E3A8A] rounded-lg px-4 py-3 text-xs leading-relaxed shadow-xs w-auto max-w-[85%]">
                     <div className="whitespace-pre-wrap">{msg.content}</div>
                   </div>
                 </div>
@@ -562,7 +674,7 @@ export const VoiceAssistantView: React.FC<VoiceAssistantViewProps> = ({ onBackTo
                     Speaking...
                   </span>
                   <span className="text-xs font-bold text-[#18181B]">Danish</span>
-                  <div className="w-6 h-6 rounded-full bg-[#18181B] text-white flex items-center justify-center font-bold text-[11px]">
+                  <div className="w-8 h-8 rounded-full bg-[#18181B] text-white flex items-center justify-center font-bold text-[11px]">
                     D
                   </div>
                 </div>
@@ -576,18 +688,45 @@ export const VoiceAssistantView: React.FC<VoiceAssistantViewProps> = ({ onBackTo
             <div ref={dialogueEndRef} />
           </div>
 
-          {/* Quick Voice Prompt Suggestions Footer */}
-          <div className="p-3 border-t border-[#F4EFEA] bg-[#FAF7F2]/60 shrink-0">
-            <div className="text-[10px] font-bold tracking-wider text-[#8E887F] uppercase mb-1.5 pl-1">
-              Try Saying:
-            </div>
+          {/* Bottom Quick Speech Input & Prompts */}
+          <div className="p-3 border-t border-[#F4EFEA] bg-[#FAF7F2]/60 shrink-0 space-y-2">
+            {/* Quick Text Input for instant manual test */}
+            <form 
+              onSubmit={(e) => {
+                e.preventDefault();
+                if (textInput.trim()) {
+                  handleVoiceCommand(textInput.trim());
+                  setTextInput('');
+                }
+              }}
+              className="flex items-center gap-2 bg-[#FFFFFF] px-3 py-1.5 rounded-lg border border-[#EAE4DB] shadow-2xs"
+            >
+              <input
+                type="text"
+                value={textInput}
+                onChange={(e) => setTextInput(e.target.value)}
+                placeholder="Type or speak a voice command..."
+                className="flex-1 text-sm bg-transparent focus:outline-none text-[#18181B] placeholder-[#A1A1AA]"
+              />
+              <button
+                type="submit"
+                disabled={!textInput.trim()}
+                className="p-1 rounded-md rounded-tr-none bg-[#18181B] text-white disabled:opacity-30 enabled:hover:bg-[#27272A] transition-colors cursor-pointer"
+              >
+                <Send className="w-3 h-3" />
+              </button>
+            </form>
+
             <div className="flex flex-wrap gap-1.5">
               {[
                 'Open Spotify',
-                'Open VS Code',
+                'Set brightness to 80%',
+                'Toggle dark mode',
+                'Set volume to 60%',
+                'Take a screenshot',
+                'Play music',
+                'Battery status',
                 'Search Google for AI trends',
-                'Set volume to 70%',
-                'Explain Quantum Computing',
               ].map((suggestion, idx) => (
                 <button
                   key={idx}

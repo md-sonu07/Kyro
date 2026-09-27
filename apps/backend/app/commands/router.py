@@ -4,7 +4,24 @@ from typing import Dict, Any, Optional, AsyncGenerator
 from app.commands.intents import IntentType, ParsedIntent, CommandResult
 from app.commands.handlers.apps import launch_application, MAC_APP_MAP
 from app.commands.handlers.browser import search_web_in_browser, open_url_in_browser, DOMAIN_SHORTCUTS
-from app.commands.handlers.system import set_volume, mute_volume, take_screenshot, get_system_stats
+from app.commands.handlers.system import (
+    set_brightness,
+    increase_brightness,
+    decrease_brightness,
+    set_volume,
+    increase_volume,
+    decrease_volume,
+    mute_volume,
+    toggle_dark_mode,
+    media_play_pause,
+    media_next_track,
+    media_prev_track,
+    take_screenshot,
+    lock_screen,
+    empty_trash,
+    get_battery_info,
+    get_system_stats,
+)
 from app.ai.router import ai_router
 from app.ai.providers.base import Message, AIResponseChunk
 from app.core.logging import logger
@@ -23,7 +40,70 @@ class CommandRouter:
                 direct_reply="Hey! 👋 I'm Kyro. How can I help you on your Mac?",
             )
 
-        # 2. Check App Launching ("open chrome", "launch vscode", "start spotify")
+        # 2. Check Brightness Controls
+        bright_set_match = re.match(r"^(?:set\s+|change\s+)?(?:screen\s+|display\s+)?brightness\s+(?:to\s+|at\s+)?(\d+)(?:%)?$", clean)
+        if not bright_set_match:
+            bright_set_match = re.match(r"^(?:brightness|screen brightness)\s+(\d+)(?:%)?$", clean)
+
+        if bright_set_match:
+            val = int(bright_set_match.group(1))
+            return ParsedIntent(intent_type=IntentType.SYSTEM_COMMAND, action_name="set_brightness", params={"level": val})
+
+        if clean in ["increase brightness", "brightness up", "brighter", "more brightness", "turn up brightness", "raise brightness", "make screen brighter"]:
+            return ParsedIntent(intent_type=IntentType.SYSTEM_COMMAND, action_name="increase_brightness")
+
+        if clean in ["decrease brightness", "brightness down", "dim screen", "dimmer", "less brightness", "turn down brightness", "lower brightness", "make screen darker"]:
+            return ParsedIntent(intent_type=IntentType.SYSTEM_COMMAND, action_name="decrease_brightness")
+
+        # 3. Check Volume & Mute Controls
+        if clean in ["mute", "mute audio", "mute volume", "silence", "turn off sound"]:
+            return ParsedIntent(intent_type=IntentType.SYSTEM_COMMAND, action_name="mute_volume", params={"mute": True})
+        if clean in ["unmute", "unmute audio", "unmute volume", "turn on sound"]:
+            return ParsedIntent(intent_type=IntentType.SYSTEM_COMMAND, action_name="mute_volume", params={"mute": False})
+        
+        vol_match = re.match(r"^(?:set\s+volume\s+(?:to\s+)?|volume\s+)(\d+)(?:%)?$", clean)
+        if vol_match:
+            vol_val = int(vol_match.group(1))
+            return ParsedIntent(intent_type=IntentType.SYSTEM_COMMAND, action_name="set_volume", params={"level": vol_val})
+
+        if clean in ["increase volume", "volume up", "louder", "turn up volume", "raise volume"]:
+            return ParsedIntent(intent_type=IntentType.SYSTEM_COMMAND, action_name="increase_volume")
+
+        if clean in ["decrease volume", "volume down", "softer", "quieter", "turn down volume", "lower volume"]:
+            return ParsedIntent(intent_type=IntentType.SYSTEM_COMMAND, action_name="decrease_volume")
+
+        # 4. Check Dark Mode
+        if clean in ["dark mode", "toggle dark mode", "light mode", "toggle light mode", "switch to dark mode", "switch to light mode", "turn on dark mode", "turn off dark mode"]:
+            return ParsedIntent(intent_type=IntentType.SYSTEM_COMMAND, action_name="toggle_dark_mode")
+
+        # 5. Check Media Controls
+        if clean in ["play music", "pause music", "pause", "resume music", "play", "stop music", "toggle music", "play spotify", "pause spotify", "music play pause"]:
+            return ParsedIntent(intent_type=IntentType.SYSTEM_COMMAND, action_name="media_play_pause")
+
+        if clean in ["next song", "next track", "skip song", "skip track", "next"]:
+            return ParsedIntent(intent_type=IntentType.SYSTEM_COMMAND, action_name="media_next_track")
+
+        if clean in ["previous song", "previous track", "prev song", "prev track", "back track", "last song"]:
+            return ParsedIntent(intent_type=IntentType.SYSTEM_COMMAND, action_name="media_prev_track")
+
+        # 6. Check Screenshots, Lock Screen, Trash
+        if "screenshot" in clean or "capture screen" in clean or clean == "take a picture":
+            return ParsedIntent(intent_type=IntentType.SYSTEM_COMMAND, action_name="screenshot")
+
+        if clean in ["lock screen", "lock mac", "sleep screen", "lock computer", "lock display"]:
+            return ParsedIntent(intent_type=IntentType.SYSTEM_COMMAND, action_name="lock_screen")
+
+        if clean in ["empty trash", "clean trash", "clear trash", "empty recycle bin"]:
+            return ParsedIntent(intent_type=IntentType.SYSTEM_COMMAND, action_name="empty_trash")
+
+        # 7. Check Battery & System Specs
+        if clean in ["battery", "battery status", "battery level", "battery percentage", "check battery", "how much battery", "battery percent", "my battery", "batt"]:
+            return ParsedIntent(intent_type=IntentType.SYSTEM_COMMAND, action_name="battery_status")
+
+        if clean in ["system info", "system specs", "hardware specs", "mac specs", "system status", "specs", "computer specs"]:
+            return ParsedIntent(intent_type=IntentType.SYSTEM_COMMAND, action_name="system_stats")
+
+        # 8. Check App Launching ("open chrome", "launch vscode", "start spotify")
         app_match = re.match(r"^(?:open|launch|start)\s+([a-zA-Z0-9\s]+)$", clean)
         if app_match:
             target = app_match.group(1).strip()
@@ -41,7 +121,7 @@ class CommandRouter:
                 params={"app_name": target},
             )
 
-        # 3. Check Web Search ("search for react", "google react", "search react tutorial")
+        # 9. Check Web Search ("search for react", "google react", "search react tutorial")
         search_match = re.match(r"^(?:search\s+for|search|google|lookup)\s+(.+)$", text.strip(), re.IGNORECASE)
         if search_match:
             query = search_match.group(1).strip()
@@ -51,7 +131,7 @@ class CommandRouter:
                 params={"query": query},
             )
 
-        # 4. Check Direct URLs ("open https://...", "go to youtube.com")
+        # 10. Check Direct URLs ("open https://...", "go to youtube.com")
         url_match = re.match(r"^(?:go\s+to|open|visit)\s+(https?://[^\s]+|[a-zA-Z0-9-]+\.(?:com|org|io|dev|ai|net|co)[^\s]*)$", clean)
         if url_match:
             return ParsedIntent(
@@ -60,24 +140,7 @@ class CommandRouter:
                 params={"url": url_match.group(1)},
             )
 
-        # 5. Check System Commands (Volume, Screenshot, Mute)
-        if clean in ["mute", "mute audio", "mute volume", "silence"]:
-            return ParsedIntent(intent_type=IntentType.SYSTEM_COMMAND, action_name="mute_volume", params={"mute": True})
-        if clean in ["unmute", "unmute audio", "unmute volume"]:
-            return ParsedIntent(intent_type=IntentType.SYSTEM_COMMAND, action_name="mute_volume", params={"mute": False})
-        
-        vol_match = re.match(r"^(?:set\s+volume\s+(?:to\s+)?|volume\s+)(\d+)(?:%)?$", clean)
-        if vol_match:
-            vol_val = int(vol_match.group(1))
-            return ParsedIntent(intent_type=IntentType.SYSTEM_COMMAND, action_name="set_volume", params={"level": vol_val})
-
-        if "screenshot" in clean:
-            return ParsedIntent(intent_type=IntentType.SYSTEM_COMMAND, action_name="screenshot")
-
-        if clean in ["system info", "system specs", "hardware specs", "mac specs"]:
-            return ParsedIntent(intent_type=IntentType.SYSTEM_COMMAND, action_name="system_stats")
-
-        # 6. Default -> AI Knowledge Query
+        # 11. Default -> AI Knowledge Query
         return ParsedIntent(
             intent_type=IntentType.AI_QUERY,
             action_name="ask_ai",
@@ -91,7 +154,7 @@ class CommandRouter:
 
         # Handle GREETING
         if parsed.intent_type == IntentType.GREETING:
-            msg = parsed.direct_reply or "Hello! How can I assist you today?"
+            msg = parsed.direct_reply or "Hey! 👋 I'm Kyro. How can I help you on your Mac?"
             return CommandResult(
                 success=True,
                 intent_type=parsed.intent_type,
@@ -142,16 +205,42 @@ class CommandRouter:
 
         # Handle SYSTEM_COMMAND
         if parsed.intent_type == IntentType.SYSTEM_COMMAND:
-            if parsed.action_name == "mute_volume":
-                success, msg = await mute_volume(parsed.params.get("mute", True))
+            if parsed.action_name == "set_brightness":
+                success, msg = await set_brightness(parsed.params.get("level", 50))
+            elif parsed.action_name == "increase_brightness":
+                success, msg = await increase_brightness()
+            elif parsed.action_name == "decrease_brightness":
+                success, msg = await decrease_brightness()
             elif parsed.action_name == "set_volume":
                 success, msg = await set_volume(parsed.params.get("level", 50))
+            elif parsed.action_name == "increase_volume":
+                success, msg = await increase_volume()
+            elif parsed.action_name == "decrease_volume":
+                success, msg = await decrease_volume()
+            elif parsed.action_name == "mute_volume":
+                success, msg = await mute_volume(parsed.params.get("mute", True))
+            elif parsed.action_name == "toggle_dark_mode":
+                success, msg = await toggle_dark_mode()
+            elif parsed.action_name == "media_play_pause":
+                success, msg = await media_play_pause()
+            elif parsed.action_name == "media_next_track":
+                success, msg = await media_next_track()
+            elif parsed.action_name == "media_prev_track":
+                success, msg = await media_prev_track()
             elif parsed.action_name == "screenshot":
                 success, msg = await take_screenshot()
+            elif parsed.action_name == "lock_screen":
+                success, msg = await lock_screen()
+            elif parsed.action_name == "empty_trash":
+                success, msg = await empty_trash()
+            elif parsed.action_name == "battery_status":
+                batt = await get_battery_info()
+                success = True
+                msg = batt["formatted"]
             elif parsed.action_name == "system_stats":
                 stats = await get_system_stats()
                 success = True
-                msg = f"Host: {stats['os']} ({stats['arch']}), CPU: {stats['cpu_cores']} cores, Python {stats['python']}"
+                msg = stats["formatted"]
             else:
                 success, msg = False, "Unknown system command"
 
