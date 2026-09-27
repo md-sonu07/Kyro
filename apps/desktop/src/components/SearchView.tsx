@@ -1,55 +1,81 @@
 import React, { useState } from 'react';
 import { Search, MessageSquare, Terminal, FileCode, ArrowRight } from 'lucide-react';
+import { ChatSession } from '../types';
 
 interface SearchViewProps {
-  onSelectChat: (title: string) => void;
+  chatSessions?: ChatSession[];
+  onSelectSession?: (id: string) => void;
+  onSelectChat?: (title: string) => void;
 }
 
-export const SearchView: React.FC<SearchViewProps> = ({ onSelectChat }) => {
+export const SearchView: React.FC<SearchViewProps> = ({
+  chatSessions = [],
+  onSelectSession,
+  onSelectChat,
+}) => {
   const [query, setQuery] = useState('');
 
-  const sampleResults = [
+  const chatItems = chatSessions.map((session) => ({
+    id: session.id,
+    type: 'chat',
+    title: session.title,
+    desc: session.desc || (session.messages[0] ? session.messages[0].content.slice(0, 60) : 'Conversation with Kyro AI'),
+    category: 'Chats',
+    icon: MessageSquare,
+  }));
+
+  const systemItems = [
     {
-      id: '1',
-      type: 'chat',
-      title: 'Neural architecture analysis',
-      desc: 'Comparing transformer variants for sequence modeling and context retention',
-      category: 'Chats',
-      icon: MessageSquare,
-    },
-    {
-      id: '2',
-      type: 'chat',
-      title: 'Build a React dashboard',
-      desc: 'Full analytics dashboard with real-time telemetry metrics',
-      category: 'Chats',
-      icon: MessageSquare,
-    },
-    {
-      id: '3',
+      id: 'cmd-brightness',
       type: 'command',
-      title: 'Open Google Chrome & search',
-      desc: 'Fast desktop intent router execution',
+      title: 'Set brightness to 80%',
+      desc: 'Native macOS display brightness control',
       category: 'Commands',
       icon: Terminal,
     },
     {
-      id: '4',
+      id: 'cmd-volume',
+      type: 'command',
+      title: 'Set volume to 50%',
+      desc: 'macOS system audio control',
+      category: 'Commands',
+      icon: Terminal,
+    },
+    {
+      id: 'cmd-battery',
+      type: 'command',
+      title: 'Check battery status',
+      desc: 'Hardware power and battery percentage telemetry',
+      category: 'Commands',
+      icon: Terminal,
+    },
+    {
+      id: 'file-voice',
       type: 'code',
-      title: 'apps/backend/app/voice/wake_word.py',
-      desc: 'Wake word detector engine for "Hey Kyro"',
+      title: 'apps/backend/app/tts/service.py',
+      desc: 'Neural TTS and Edge TTS voice synthesis engine',
       category: 'Files',
       icon: FileCode,
     },
   ];
 
+  const allItems = [...chatItems, ...systemItems];
+
   const filtered = query.trim()
-    ? sampleResults.filter(
+    ? allItems.filter(
       (r) =>
         r.title.toLowerCase().includes(query.toLowerCase()) ||
         r.desc.toLowerCase().includes(query.toLowerCase())
     )
-    : sampleResults;
+    : allItems;
+
+  const handleItemClick = (item: typeof allItems[0]) => {
+    if (item.type === 'chat' && onSelectSession) {
+      onSelectSession(item.id);
+    } else if (onSelectChat) {
+      onSelectChat(item.title);
+    }
+  };
 
   return (
     <div className="flex-1 overflow-y-auto p-8 max-w-3xl mx-auto w-full select-none font-sans">
@@ -70,7 +96,7 @@ export const SearchView: React.FC<SearchViewProps> = ({ onSelectChat }) => {
 
       <div className="space-y-2">
         <div className="text-[11px] font-bold tracking-wider text-[#8E887F] uppercase pl-1 mb-2">
-          {query.trim() ? `Search Results (${filtered.length})` : 'Suggested & Recent'}
+          {query.trim() ? `Search Results (${filtered.length})` : 'Recent Chats & Actions'}
         </div>
 
         {filtered.map((item) => {
@@ -78,7 +104,7 @@ export const SearchView: React.FC<SearchViewProps> = ({ onSelectChat }) => {
           return (
             <div
               key={item.id}
-              onClick={() => onSelectChat(item.title)}
+              onClick={() => handleItemClick(item)}
               className="bg-[#FFFFFF] hover:bg-[#FDFBF7] p-4 rounded-xl border border-[#EAE4DB] shadow-sm hover:shadow-soft transition-all duration-150 flex items-center justify-between cursor-pointer group"
             >
               <div className="flex items-center gap-3.5">
@@ -112,3 +138,4 @@ export const SearchView: React.FC<SearchViewProps> = ({ onSelectChat }) => {
     </div>
   );
 };
+

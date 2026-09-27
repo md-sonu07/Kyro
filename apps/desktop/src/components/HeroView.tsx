@@ -152,6 +152,7 @@ export const HeroView: React.FC<HeroViewProps> = ({
             <ModelDropdown
               selectedProvider={selectedProvider}
               onSelectProvider={setSelectedProvider}
+              direction="up"
             />
 
             <button

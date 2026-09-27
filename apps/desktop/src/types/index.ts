@@ -32,6 +32,17 @@ export interface ChatMessage {
   executionTimeMs?: number;
 }
 
+export interface ChatSession {
+  id: string;
+  title: string;
+  desc: string;
+  messages: ChatMessage[];
+  createdAt: number;
+  updatedAt: number;
+  provider?: string;
+  mode?: 'chat' | 'voice';
+}
+
 export interface CommandResult {
   success: boolean;
   intent_type: 'OPEN_APP' | 'SEARCH_WEB' | 'OPEN_URL' | 'SYSTEM_COMMAND' | 'GREETING' | 'AI_QUERY' | 'UNKNOWN';

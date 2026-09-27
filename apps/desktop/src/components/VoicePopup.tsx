@@ -14,15 +14,21 @@ import {
   Loader2
 } from 'lucide-react';
 import { executeCommand } from '../services/api';
-import { CommandResult } from '../types';
+import { CommandResult, ChatMessage, ChatSession } from '../types';
 
 interface VoicePopupProps {
   isOpen: boolean;
   onClose: () => void;
   selectedProvider: string;
+  onSaveSession?: (session: ChatSession) => void;
 }
 
-export const VoicePopup: React.FC<VoicePopupProps> = ({ isOpen, onClose, selectedProvider }) => {
+export const VoicePopup: React.FC<VoicePopupProps> = ({
+  isOpen,
+  onClose,
+  selectedProvider,
+  onSaveSession,
+}) => {
   const [input, setInput] = useState('');
   const [isListening, setIsListening] = useState(false);
   const [loading, setLoading] = useState(false);
@@ -109,6 +115,39 @@ export const VoicePopup: React.FC<VoicePopupProps> = ({ isOpen, onClose, selecte
       // Speak the voice response
       if (res.voice_response) {
         speakReply(res.voice_response);
+      }
+
+      // Save to chat session history
+      if (onSaveSession) {
+        const userMsg: ChatMessage = {
+          id: `u-${Date.now()}`,
+          role: 'user',
+          content: text,
+          timestamp: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
+        };
+        const assistantMsg: ChatMessage = {
+          id: `a-${Date.now()}`,
+          role: 'assistant',
+          content: res.text_response,
+          timestamp: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
+          provider: selectedProvider,
+          intentType: res.intent_type,
+          actionExecuted: res.action_executed,
+          executionTimeMs: res.execution_time_ms,
+        };
+        const title = text.length > 38 ? text.slice(0, 38) + '...' : text;
+        const desc = res.text_response.slice(0, 50) + (res.text_response.length > 50 ? '...' : '');
+
+        onSaveSession({
+          id: `v-${Date.now()}`,
+          title: `🎤 ${title}`,
+          desc: desc || 'Voice assistant command',
+          messages: [userMsg, assistantMsg],
+          createdAt: Date.now(),
+          updatedAt: Date.now(),
+          provider: selectedProvider,
+          mode: 'voice',
+        });
       }
     } catch (err: any) {
       setLastResult({

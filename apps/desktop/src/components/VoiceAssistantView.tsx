@@ -13,8 +13,10 @@ import {
   Send
 } from 'lucide-react';
 import { ModelDropdown } from './ModelDropdown';
+import { VoiceDropdown } from './VoiceDropdown';
 import { ThinkingBlock, parseThinkingContent } from './ThinkingBlock';
-import { executeCommand, streamChatMessage } from '../services/api';
+import { executeCommand, streamChatMessage, getTTSVoices, synthesizeSpeechAudio, TTSVoiceInfo } from '../services/api';
+import { ChatMessage, ChatSession } from '../types';
 
 interface DialogueMessage {
   id: string;
@@ -29,29 +31,103 @@ interface DialogueMessage {
 
 interface VoiceAssistantViewProps {
   onBackToChat: () => void;
+  onSaveSession?: (session: ChatSession) => void;
+  activeSession?: ChatSession | null;
 }
 
-export const VoiceAssistantView: React.FC<VoiceAssistantViewProps> = ({ onBackToChat }) => {
+export const VoiceAssistantView: React.FC<VoiceAssistantViewProps> = ({
+  onBackToChat,
+  onSaveSession,
+  activeSession,
+}) => {
+  const [sessionId, setSessionId] = useState<string>(activeSession?.id || `voice-${Date.now()}`);
+  const [sessionCreatedAt] = useState<number>(activeSession?.createdAt || Date.now());
   const [isListening, setIsListening] = useState(true);
   const [isSpeaking, setIsSpeaking] = useState(false);
   const [voiceSpeechEnabled, setVoiceSpeechEnabled] = useState(true);
   const [currentTranscript, setCurrentTranscript] = useState('');
   const [textInput, setTextInput] = useState('');
-  const [dialogue, setDialogue] = useState<DialogueMessage[]>([
+  const [availableVoices, setAvailableVoices] = useState<TTSVoiceInfo[]>([
     {
-      id: 'd-welcome',
-      role: 'assistant',
-      content: 'Hello Danish! I am Kyro, your autonomous voice desktop assistant. Speak any desktop command like "Open Chrome" or ask me a question and I will answer.',
-      time: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
+      id: 'en-US-JennyNeural',
+      name: 'Jenny (Studio AI)',
+      gender: 'Female',
+      language: 'en-US',
+      accent: 'US',
+      description: 'Warm, natural, crystal clear conversational tone',
+    },
+    {
+      id: 'en-US-GuyNeural',
+      name: 'Guy (Studio AI)',
+      gender: 'Male',
+      language: 'en-US',
+      accent: 'US',
+      description: 'Deep, confident, friendly voice',
+    },
+    {
+      id: 'en-US-AriaNeural',
+      name: 'Aria (Expressive)',
+      gender: 'Female',
+      language: 'en-US',
+      accent: 'US',
+      description: 'Polished, professional, expressive delivery',
+    },
+    {
+      id: 'en-US-ChristopherNeural',
+      name: 'Christopher (Smooth)',
+      gender: 'Male',
+      language: 'en-US',
+      accent: 'US',
+      description: 'Smooth, relaxed, storyteller voice',
+    },
+    {
+      id: 'en-GB-SoniaNeural',
+      name: 'Sonia (British)',
+      gender: 'Female',
+      language: 'en-GB',
+      accent: 'UK',
+      description: 'Refined, articulate British accent',
+    },
+    {
+      id: 'en-US-AnaNeural',
+      name: 'Ana (Youthful)',
+      gender: 'Female',
+      language: 'en-US',
+      accent: 'US',
+      description: 'Friendly, energetic, clear voice',
     },
   ]);
+  const [selectedVoice, setSelectedVoice] = useState('en-US-JennyNeural');
+  const [dialogue, setDialogue] = useState<DialogueMessage[]>(() => {
+    if (activeSession && activeSession.messages.length > 0) {
+      return activeSession.messages.map((m) => ({
+        id: m.id,
+        role: m.role,
+        content: m.content,
+        time: m.timestamp,
+        intent: m.intentType,
+        action: m.actionExecuted,
+        latency: m.executionTimeMs,
+      }));
+    }
+    return [
+      {
+        id: 'd-welcome',
+        role: 'assistant',
+        content: 'Hello Danish! I am Kyro, your autonomous voice desktop assistant. Speak any desktop command like "Open Chrome" or ask me a question and I will answer.',
+        time: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
+      },
+    ];
+  });
   const [audioLevel, setAudioLevel] = useState(0);
-  const [selectedProvider, setSelectedProvider] = useState('ollama');
+  const [selectedProvider, setSelectedProvider] = useState(activeSession?.provider || 'ollama');
   const [lastAction, setLastAction] = useState<string | null>(null);
 
   const isListeningRef = useRef(true);
   const isSpeakingRef = useRef(false);
   const selectedProviderRef = useRef('ollama');
+  const selectedVoiceRef = useRef('en-US-JennyNeural');
+  const currentAudioRef = useRef<HTMLAudioElement | null>(null);
   const recognitionRef = useRef<any>(null);
   const audioContextRef = useRef<AudioContext | null>(null);
   const analyserRef = useRef<AnalyserNode | null>(null);
@@ -60,6 +136,14 @@ export const VoiceAssistantView: React.FC<VoiceAssistantViewProps> = ({ onBackTo
   const dialogueEndRef = useRef<HTMLDivElement>(null);
   const silenceTimerRef = useRef<any>(null);
   const accumulatedTranscriptRef = useRef('');
+
+  useEffect(() => {
+    getTTSVoices().then((voices) => {
+      if (voices && voices.length > 0) {
+        setAvailableVoices(voices);
+      }
+    });
+  }, []);
 
   useEffect(() => {
     isListeningRef.current = isListening;
@@ -120,7 +204,6 @@ export const VoiceAssistantView: React.FC<VoiceAssistantViewProps> = ({ onBackTo
         };
         updateLevel();
       } catch {
-        // Fallback simulation if mic stream permission is blocked
         const interval = setInterval(() => {
           if (!active) return;
           if (isListeningRef.current) {
@@ -147,8 +230,8 @@ export const VoiceAssistantView: React.FC<VoiceAssistantViewProps> = ({ onBackTo
     };
   }, []);
 
-  const speakText = useCallback((text: string) => {
-    if (!voiceSpeechEnabled || !window.speechSynthesis) return;
+  const speakText = useCallback(async (text: string) => {
+    if (!voiceSpeechEnabled) return;
 
     // Filter out <think> tags from speech output
     const parsed = parseThinkingContent(text);
@@ -159,25 +242,104 @@ export const VoiceAssistantView: React.FC<VoiceAssistantViewProps> = ({ onBackTo
 
     if (!spokenContent) return;
 
-    window.speechSynthesis.cancel();
+    // Stop any ongoing audio or browser speech
+    if (currentAudioRef.current) {
+      currentAudioRef.current.pause();
+      currentAudioRef.current = null;
+    }
+    if (window.speechSynthesis) {
+      window.speechSynthesis.cancel();
+    }
+
     setIsSpeaking(true);
     isSpeakingRef.current = true;
 
-    const utterance = new SpeechSynthesisUtterance(spokenContent.slice(0, 350));
-    utterance.rate = 1.05;
-    utterance.pitch = 1.0;
-
-    utterance.onend = () => {
-      setIsSpeaking(false);
-      isSpeakingRef.current = false;
+    // Fallback helper using native browser speech
+    const fallbackToBrowserSpeech = (content: string) => {
+      if (!window.speechSynthesis) {
+        setIsSpeaking(false);
+        isSpeakingRef.current = false;
+        return;
+      }
+      const utterance = new SpeechSynthesisUtterance(content.slice(0, 350));
+      utterance.rate = 1.05;
+      utterance.pitch = 1.0;
+      utterance.onend = () => {
+        setIsSpeaking(false);
+        isSpeakingRef.current = false;
+      };
+      utterance.onerror = () => {
+        setIsSpeaking(false);
+        isSpeakingRef.current = false;
+      };
+      window.speechSynthesis.speak(utterance);
     };
-    utterance.onerror = () => {
-      setIsSpeaking(false);
-      isSpeakingRef.current = false;
-    };
 
-    window.speechSynthesis.speak(utterance);
+    try {
+      // Synthesize using High-Definition Neural TTS AI Model
+      const voiceId = selectedVoiceRef.current || 'en-US-JennyNeural';
+      const audioBlob = await synthesizeSpeechAudio(spokenContent.slice(0, 500), voiceId);
+
+      if (audioBlob && audioBlob.size > 0) {
+        const audioUrl = URL.createObjectURL(audioBlob);
+        const audio = new Audio(audioUrl);
+        currentAudioRef.current = audio;
+
+        audio.onended = () => {
+          setIsSpeaking(false);
+          isSpeakingRef.current = false;
+          currentAudioRef.current = null;
+          URL.revokeObjectURL(audioUrl);
+        };
+
+        audio.onerror = () => {
+          URL.revokeObjectURL(audioUrl);
+          fallbackToBrowserSpeech(spokenContent);
+        };
+
+        await audio.play();
+      } else {
+        fallbackToBrowserSpeech(spokenContent);
+      }
+    } catch {
+      fallbackToBrowserSpeech(spokenContent);
+    }
   }, [voiceSpeechEnabled]);
+
+  useEffect(() => {
+    if (activeSession) {
+      setSessionId(activeSession.id);
+      setSelectedProvider(activeSession.provider || 'ollama');
+      if (activeSession.messages.length > 0) {
+        setDialogue(
+          activeSession.messages.map((m) => ({
+            id: m.id,
+            role: m.role,
+            content: m.content,
+            time: m.timestamp,
+            intent: m.intentType,
+            action: m.actionExecuted,
+            latency: m.executionTimeMs,
+          }))
+        );
+      }
+    }
+  }, [activeSession]);
+
+  const convertDialogueToMessages = (items: DialogueMessage[]): ChatMessage[] => {
+    return items
+      .filter((d) => d.id !== 'd-welcome')
+      .map((d) => ({
+        id: d.id,
+        role: d.role,
+        content: d.content,
+        timestamp: d.time,
+        provider: selectedProviderRef.current,
+        intentType: d.intent,
+        actionExecuted: d.action,
+        executionTimeMs: d.latency,
+      }));
+  };
 
   const handleVoiceCommand = useCallback(async (text: string) => {
     if (!text.trim()) return;
@@ -203,7 +365,8 @@ export const VoiceAssistantView: React.FC<VoiceAssistantViewProps> = ({ onBackTo
       isStreaming: true,
     };
 
-    setDialogue((prev) => [...prev, userMsg, assistantPlaceholder]);
+    const nextDialogue = [...dialogue, userMsg, assistantPlaceholder];
+    setDialogue(nextDialogue);
     setLastAction(null);
 
     try {
@@ -212,29 +375,58 @@ export const VoiceAssistantView: React.FC<VoiceAssistantViewProps> = ({ onBackTo
       const cmdResult = await executeCommand(queryText, currentProv);
 
       if (cmdResult.intent_type !== 'AI_QUERY' && !cmdResult.stream_needed) {
-        setDialogue((prev) =>
-          prev.map((msg) =>
-            msg.id === assistantMsgId
-              ? {
-                  ...msg,
-                  content: cmdResult.text_response,
-                  intent: cmdResult.intent_type,
-                  action: cmdResult.action_executed,
-                  latency: cmdResult.execution_time_ms,
-                  isStreaming: false,
-                }
-              : msg
-          )
+        const updatedDialogue: DialogueMessage[] = nextDialogue.map((msg) =>
+          msg.id === assistantMsgId
+            ? {
+                ...msg,
+                content: cmdResult.text_response,
+                intent: cmdResult.intent_type,
+                action: cmdResult.action_executed,
+                latency: cmdResult.execution_time_ms,
+                isStreaming: false,
+              }
+            : msg
         );
+        setDialogue(updatedDialogue);
         setLastAction(`${cmdResult.intent_type} • ${cmdResult.action_executed || 'Executed'}`);
         speakText(cmdResult.voice_response);
+
+        // Save Voice conversation to chat history
+        if (onSaveSession) {
+          const messages = convertDialogueToMessages(updatedDialogue);
+          const firstUser = messages.find((m) => m.role === 'user');
+          const title =
+            activeSession?.title ||
+            (firstUser ? `🎤 ${firstUser.content.slice(0, 36)}` : `🎤 ${queryText.slice(0, 36)}`);
+          const desc =
+            cmdResult.text_response.slice(0, 50) +
+            (cmdResult.text_response.length > 50 ? '...' : '');
+
+          onSaveSession({
+            id: sessionId,
+            title,
+            desc,
+            messages,
+            createdAt: sessionCreatedAt,
+            updatedAt: Date.now(),
+            provider: currentProv,
+            mode: 'voice',
+          });
+        }
         return;
       }
 
       // 2. Stream AI response
       let fullAnswer = '';
+      const chatHistory = nextDialogue
+        .filter((d) => d.id !== 'd-welcome' && !d.isStreaming)
+        .map((d) => ({
+          role: d.role,
+          content: d.content,
+        }));
+
       await streamChatMessage(
-        [{ role: 'user', content: queryText }],
+        chatHistory.length > 0 ? chatHistory : [{ role: 'user', content: queryText }],
         currentProv,
         (chunk) => {
           fullAnswer += chunk;
@@ -252,14 +444,43 @@ export const VoiceAssistantView: React.FC<VoiceAssistantViewProps> = ({ onBackTo
           );
         },
         () => {
-          setDialogue((prev) =>
-            prev.map((msg) =>
-              msg.id === assistantMsgId
-                ? { ...msg, isStreaming: false }
-                : msg
-            )
+          const finalDialogue: DialogueMessage[] = nextDialogue.map((msg) =>
+            msg.id === assistantMsgId
+              ? {
+                  ...msg,
+                  content: fullAnswer,
+                  intent: 'AI_QUERY',
+                  isStreaming: false,
+                }
+              : msg
           );
+          setDialogue(finalDialogue);
           speakText(fullAnswer);
+
+          // Save Voice conversation to chat history
+          if (onSaveSession) {
+            const messages = convertDialogueToMessages(finalDialogue);
+            const firstUser = messages.find((m) => m.role === 'user');
+            const title =
+              activeSession?.title ||
+              (firstUser ? `🎤 ${firstUser.content.slice(0, 36)}` : `🎤 ${queryText.slice(0, 36)}`);
+            const cleanAnswer = fullAnswer
+              .replace(/<think>[\s\S]*?<\/think>/gi, '')
+              .replace(/[*#`_~]/g, '')
+              .trim();
+            const desc = cleanAnswer.slice(0, 50) + (cleanAnswer.length > 50 ? '...' : '');
+
+            onSaveSession({
+              id: sessionId,
+              title,
+              desc: desc || 'Voice conversation with Kyro',
+              messages,
+              createdAt: sessionCreatedAt,
+              updatedAt: Date.now(),
+              provider: currentProv,
+              mode: 'voice',
+            });
+          }
         },
         (err) => {
           setDialogue((prev) =>
@@ -280,7 +501,7 @@ export const VoiceAssistantView: React.FC<VoiceAssistantViewProps> = ({ onBackTo
         )
       );
     }
-  }, [speakText]);
+  }, [dialogue, activeSession, sessionId, sessionCreatedAt, onSaveSession, speakText]);
 
   // Web Speech API Continuous Recognition with Silence Detection
   useEffect(() => {
@@ -389,7 +610,11 @@ export const VoiceAssistantView: React.FC<VoiceAssistantViewProps> = ({ onBackTo
         });
       }
 
-      // Cancel speech synthesis
+      // Cancel speech synthesis and ongoing neural audio
+      if (currentAudioRef.current) {
+        currentAudioRef.current.pause();
+        currentAudioRef.current = null;
+      }
       if (window.speechSynthesis) {
         window.speechSynthesis.cancel();
       }
@@ -449,11 +674,18 @@ export const VoiceAssistantView: React.FC<VoiceAssistantViewProps> = ({ onBackTo
           </div>
         </div>
 
-        <div className="flex items-center gap-3">
+        <div className="flex items-center gap-2.5">
+          <VoiceDropdown
+            voices={availableVoices}
+            selectedVoiceId={selectedVoice}
+            onSelectVoice={setSelectedVoice}
+          />
+
           <ModelDropdown
             selectedProvider={selectedProvider}
             onSelectProvider={setSelectedProvider}
             size="sm"
+            direction="down"
           />
 
           <button
@@ -461,8 +693,14 @@ export const VoiceAssistantView: React.FC<VoiceAssistantViewProps> = ({ onBackTo
             onClick={() => {
               const next = !voiceSpeechEnabled;
               setVoiceSpeechEnabled(next);
-              if (!next && window.speechSynthesis) {
-                window.speechSynthesis.cancel();
+              if (!next) {
+                if (currentAudioRef.current) {
+                  currentAudioRef.current.pause();
+                  currentAudioRef.current = null;
+                }
+                if (window.speechSynthesis) {
+                  window.speechSynthesis.cancel();
+                }
                 setIsSpeaking(false);
               }
             }}

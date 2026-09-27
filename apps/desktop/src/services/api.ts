@@ -130,3 +130,40 @@ export async function streamChatMessage(
     onError(err);
   }
 }
+
+export interface TTSVoiceInfo {
+  id: string;
+  name: string;
+  gender: string;
+  language: string;
+  accent: string;
+  description: string;
+  isDefault?: boolean;
+}
+
+export async function getTTSVoices(): Promise<TTSVoiceInfo[]> {
+  try {
+    const response = await fetch(`${API_BASE_URL}/voice/voices`);
+    if (!response.ok) return [];
+    const data = await response.json();
+    return data.voices || [];
+  } catch {
+    return [];
+  }
+}
+
+export async function synthesizeSpeechAudio(text: string, voice?: string): Promise<Blob | null> {
+  try {
+    const response = await fetch(`${API_BASE_URL}/voice/tts`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ text, voice }),
+    });
+    if (!response.ok) return null;
+    return await response.blob();
+  } catch {
+    return null;
+  }
+}
+
+

@@ -14,22 +14,41 @@ import { HeroView } from './HeroView';
 import { ModelDropdown } from './ModelDropdown';
 import { ThinkingBlock } from './ThinkingBlock';
 import { streamChatMessage, executeCommand, getAIProviders, ProviderInfo } from '../services/api';
-import { ChatMessage } from '../types';
+import { ChatMessage, ChatSession } from '../types';
 
 interface ChatViewProps {
   onOpenVoicePopup?: () => void;
+  activeSession?: ChatSession | null;
+  onSaveSession: (session: ChatSession) => void;
+  onNewChat: () => void;
 }
 
-export const ChatView: React.FC<ChatViewProps> = () => {
-  const [messages, setMessages] = useState<ChatMessage[]>([]);
+export const ChatView: React.FC<ChatViewProps> = ({
+  activeSession,
+  onSaveSession,
+  onNewChat,
+}) => {
+  const [messages, setMessages] = useState<ChatMessage[]>(activeSession?.messages || []);
   const [input, setInput] = useState('');
   const [isStreaming, setIsStreaming] = useState(false);
   const [isListening, setIsListening] = useState(false);
   const [voiceSpeechEnabled, setVoiceSpeechEnabled] = useState(true);
   const [providers, setProviders] = useState<ProviderInfo[]>([]);
-  const [selectedProvider, setSelectedProvider] = useState<string>('ollama');
+  const [selectedProvider, setSelectedProvider] = useState<string>(activeSession?.provider || 'ollama');
+  const [sessionId, setSessionId] = useState<string>(activeSession?.id || `s-${Date.now()}`);
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const recognitionRef = useRef<any>(null);
+
+  useEffect(() => {
+    if (activeSession) {
+      setMessages(activeSession.messages || []);
+      setSelectedProvider(activeSession.provider || 'ollama');
+      setSessionId(activeSession.id);
+    } else {
+      setMessages([]);
+      setSessionId(`s-${Date.now()}`);
+    }
+  }, [activeSession]);
 
   const scrollToBottom = () => {
     messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
@@ -127,7 +146,8 @@ export const ChatView: React.FC<ChatViewProps> = () => {
       provider: selectedProvider,
     };
 
-    setMessages((prev) => [...prev, userMsg, assistantMsgPlaceholder]);
+    const nextMessages = [...messages, userMsg, assistantMsgPlaceholder];
+    setMessages(nextMessages);
     setInput('');
     setIsStreaming(true);
 
@@ -137,21 +157,34 @@ export const ChatView: React.FC<ChatViewProps> = () => {
 
       if (cmdResult.intent_type !== 'AI_QUERY' && !cmdResult.stream_needed) {
         // Fast instant desktop action (app launch, web search, system command, greeting)
-        setMessages((prev) =>
-          prev.map((m) =>
-            m.id === assistantMsgId
-              ? {
-                ...m,
-                content: cmdResult.text_response,
-                intentType: cmdResult.intent_type,
-                actionExecuted: cmdResult.action_executed,
-                executionTimeMs: cmdResult.execution_time_ms,
-              }
-              : m
-          )
+        const updatedMessages: ChatMessage[] = nextMessages.map((m) =>
+          m.id === assistantMsgId
+            ? {
+              ...m,
+              content: cmdResult.text_response,
+              intentType: cmdResult.intent_type,
+              actionExecuted: cmdResult.action_executed,
+              executionTimeMs: cmdResult.execution_time_ms,
+            }
+            : m
         );
+        setMessages(updatedMessages);
         speakReply(cmdResult.voice_response);
         setIsStreaming(false);
+
+        // Save session
+        const title = activeSession?.title || (userMsg.content.length > 38 ? userMsg.content.slice(0, 38) + '...' : userMsg.content);
+        const desc = cmdResult.text_response.slice(0, 50) + (cmdResult.text_response.length > 50 ? '...' : '');
+        onSaveSession({
+          id: sessionId,
+          title,
+          desc,
+          messages: updatedMessages,
+          createdAt: activeSession?.createdAt || Date.now(),
+          updatedAt: Date.now(),
+          provider: selectedProvider,
+          mode: 'chat',
+        });
         return;
       }
 
@@ -182,6 +215,31 @@ export const ChatView: React.FC<ChatViewProps> = () => {
         () => {
           setIsStreaming(false);
           speakReply(fullAnswer.slice(0, 160));
+
+          // Save completed streamed conversation session
+          const finalMessages: ChatMessage[] = nextMessages.map((m) =>
+            m.id === assistantMsgId
+              ? {
+                ...m,
+                content: fullAnswer,
+                intentType: 'AI_QUERY',
+              }
+              : m
+          );
+          const title = activeSession?.title || (userMsg.content.length > 38 ? userMsg.content.slice(0, 38) + '...' : userMsg.content);
+          const cleanAnswer = fullAnswer.replace(/<think>[\s\S]*?<\/think>/gi, '').replace(/[*#`_~]/g, '').trim();
+          const desc = cleanAnswer.slice(0, 50) + (cleanAnswer.length > 50 ? '...' : '');
+
+          onSaveSession({
+            id: sessionId,
+            title,
+            desc: desc || 'Conversation with Kyro AI',
+            messages: finalMessages,
+            createdAt: activeSession?.createdAt || Date.now(),
+            updatedAt: Date.now(),
+            provider: selectedProvider,
+            mode: 'chat',
+          });
         },
         (err) => {
           setMessages((prev) =>
@@ -213,10 +271,6 @@ export const ChatView: React.FC<ChatViewProps> = () => {
     }
   };
 
-  const clearChat = () => {
-    setMessages([]);
-  };
-
   // If no conversation yet, render Hero View
   if (messages.length === 0) {
     return (
@@ -235,7 +289,7 @@ export const ChatView: React.FC<ChatViewProps> = () => {
       <div className="h-12 border-b border-[#EBE5DC] bg-[#FAF7F2]/80 backdrop-blur-md px-6 flex items-center justify-between z-10">
         <div className="flex items-center gap-2">
           <button
-            onClick={clearChat}
+            onClick={onNewChat}
             className="text-xs font-semibold text-[#18181B] hover:text-[#D97706] transition-colors flex items-center gap-1.5 cursor-pointer"
           >
             ← New Conversation
@@ -255,8 +309,8 @@ export const ChatView: React.FC<ChatViewProps> = () => {
           </button>
 
           <button
-            onClick={clearChat}
-            title="Clear conversation"
+            onClick={onNewChat}
+            title="Clear and start new conversation"
             className="p-1.5 rounded-lg text-[#71717A] hover:text-[#18181B] hover:bg-[#F2ECE3] transition-colors cursor-pointer"
           >
             <Trash2 className="w-3.5 h-3.5" />
@@ -336,7 +390,7 @@ export const ChatView: React.FC<ChatViewProps> = () => {
         <div ref={messagesEndRef} />
       </div>
 
-      {/* Floating Bottom Input matching screenshot */}
+      {/* Floating Bottom Input */}
       <div className="p-4 max-w-4xl mx-auto w-full">
         <div className="bg-[#FFFFFF] rounded-xl border border-[#E5DFD5] shadow-hero p-3 space-y-2">
           <textarea
@@ -388,6 +442,7 @@ export const ChatView: React.FC<ChatViewProps> = () => {
                 selectedProvider={selectedProvider}
                 onSelectProvider={setSelectedProvider}
                 size="sm"
+                direction="up"
               />
 
               <button
