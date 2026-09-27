@@ -1,6 +1,7 @@
 from fastapi import APIRouter, WebSocket, WebSocketDisconnect
 from typing import List
 import json
+from app.ai.router import ai_router
 from app.core.logging import logger
 
 router = APIRouter(tags=["websocket"])
@@ -32,27 +33,47 @@ manager = ConnectionManager()
 async def websocket_endpoint(websocket: WebSocket):
     await manager.connect(websocket)
     try:
-        # Send initial connection acknowledgment
+        # Initial handshake
         await websocket.send_text(json.dumps({
             "type": "connection_ack",
-            "message": "Connected to Kyro Realtime Agent Engine",
+            "message": "Connected to Kyro Realtime AI Engine",
             "status": "connected"
         }))
+        
         while True:
-            data = await websocket.receive_text()
-            payload = json.loads(data)
-            logger.debug(f"Received WS message: {payload}")
-            
-            # Simple ping-pong / echo for Phase 1 verification
-            event_type = payload.get("type", "message")
+            raw_data = await websocket.receive_text()
+            data = json.loads(raw_data)
+            event_type = data.get("type", "chat")
+
             if event_type == "ping":
-                await websocket.send_text(json.dumps({"type": "pong", "timestamp": payload.get("timestamp")}))
-            else:
-                await websocket.send_text(json.dumps({
-                    "type": "agent_stream_chunk",
-                    "content": f"Kyro received event: {event_type}",
-                    "raw": payload
-                }))
+                await websocket.send_text(json.dumps({"type": "pong", "timestamp": data.get("timestamp")}))
+                continue
+
+            if event_type == "chat_stream":
+                messages = data.get("messages", [])
+                provider = data.get("provider", None)
+                system_prompt = data.get("system_prompt", None)
+
+                try:
+                    async for chunk in ai_router.stream_chat(
+                        messages=messages,
+                        provider_name=provider,
+                        system_prompt=system_prompt,
+                    ):
+                        await websocket.send_text(json.dumps({
+                            "type": "chat_chunk",
+                            "content": chunk.content,
+                            "done": chunk.done,
+                            "provider": chunk.provider,
+                            "model": chunk.model,
+                        }))
+                except Exception as stream_err:
+                    logger.error(f"WebSocket stream error: {stream_err}")
+                    await websocket.send_text(json.dumps({
+                        "type": "chat_chunk",
+                        "error": str(stream_err),
+                        "done": True,
+                    }))
     except WebSocketDisconnect:
         manager.disconnect(websocket)
     except Exception as e:

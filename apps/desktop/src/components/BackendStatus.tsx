@@ -5,7 +5,6 @@ import {
   RefreshCw, 
   Server, 
   Cpu, 
-  Wifi, 
   Send, 
   Zap, 
   Terminal as TerminalIcon,
@@ -19,7 +18,6 @@ export const BackendStatus: React.FC = () => {
   const [health, setHealth] = useState<BackendHealthResponse | null>(null);
   const [sysInfo, setSysInfo] = useState<SystemInfoResponse | null>(null);
   const [loading, setLoading] = useState(false);
-  const [error, setError] = useState<string | null>(null);
   
   // Interactive test states
   const [testInput, setTestInput] = useState('Hello Kyro! Test connection.');
@@ -28,7 +26,6 @@ export const BackendStatus: React.FC = () => {
 
   const fetchStatus = async () => {
     setLoading(true);
-    setError(null);
     try {
       const [hData, sData] = await Promise.all([
         checkBackendHealth(),
@@ -36,8 +33,7 @@ export const BackendStatus: React.FC = () => {
       ]);
       setHealth(hData);
       setSysInfo(sData);
-    } catch (err: any) {
-      setError(err.message || 'Unable to connect to FastAPI backend');
+    } catch {
       setHealth(null);
     } finally {
       setLoading(false);

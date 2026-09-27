@@ -1,11 +1,12 @@
-import React, { useState, useEffect } from 'react';
+import { useState, useEffect } from 'react';
 import { Header } from './components/Header';
 import { Sidebar } from './components/Sidebar';
 import { BackendStatus } from './components/BackendStatus';
+import { ChatView } from './components/ChatView';
 import { checkBackendHealth } from './services/api';
 
 export function App() {
-  const [currentTab, setCurrentTab] = useState('status');
+  const [currentTab, setCurrentTab] = useState('chat');
   const [backendConnected, setBackendConnected] = useState(false);
 
   useEffect(() => {
@@ -33,9 +34,10 @@ export function App() {
         <Sidebar currentTab={currentTab} setCurrentTab={setCurrentTab} />
 
         {/* Dynamic Content View */}
-        <main className="flex-1 bg-gradient-to-b from-background via-surface/40 to-background overflow-y-auto">
+        <main className="flex-1 bg-gradient-to-b from-background via-surface/40 to-background overflow-hidden flex flex-col">
           {currentTab === 'status' && <BackendStatus />}
-          {currentTab !== 'status' && (
+          {currentTab === 'chat' && <ChatView />}
+          {currentTab !== 'status' && currentTab !== 'chat' && (
             <div className="flex flex-col items-center justify-center h-full p-8 text-center text-slate-400 space-y-4">
               <div className="p-4 rounded-2xl bg-surface border border-border">
                 <span className="text-2xl">🚧</span>

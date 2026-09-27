@@ -1,5 +1,5 @@
 import React from 'react';
-import { Bot, Sparkles, Activity, ShieldCheck, Terminal } from 'lucide-react';
+import { Bot, ShieldCheck } from 'lucide-react';
 
 interface HeaderProps {
   backendConnected: boolean;

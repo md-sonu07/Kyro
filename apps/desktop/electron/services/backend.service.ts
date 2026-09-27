@@ -1,9 +1,5 @@
-import { spawn, ChildProcess } from 'child_process';
-import path from 'path';
-
 export class BackendService {
   private static instance: BackendService;
-  private process: ChildProcess | null = null;
   private backendUrl = 'http://127.0.0.1:8000';
 
   private constructor() {}
