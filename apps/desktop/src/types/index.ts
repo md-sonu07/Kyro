@@ -23,7 +23,28 @@ export interface VoiceStatusResponse {
 
 export interface ChatMessage {
   id: string;
-  role: 'user' | 'agent' | 'system';
+  role: 'user' | 'assistant';
   content: string;
-  timestamp: Date;
+  timestamp: string;
+  provider?: string;
+  intentType?: string;
+  actionExecuted?: string;
+  executionTimeMs?: number;
+}
+
+export interface CommandResult {
+  success: boolean;
+  intent_type: 'OPEN_APP' | 'SEARCH_WEB' | 'OPEN_URL' | 'SYSTEM_COMMAND' | 'GREETING' | 'AI_QUERY' | 'UNKNOWN';
+  action_executed?: string;
+  voice_response: string;
+  text_response: string;
+  execution_time_ms: number;
+  stream_needed: boolean;
+  data?: Record<string, any>;
+}
+
+export interface ProviderInfo {
+  name: string;
+  available: boolean;
+  models: string[];
 }

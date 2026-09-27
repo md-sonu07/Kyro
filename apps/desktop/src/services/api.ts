@@ -1,4 +1,12 @@
-import { BackendHealthResponse, SystemInfoResponse, VoiceStatusResponse } from '../types';
+import { 
+  BackendHealthResponse, 
+  SystemInfoResponse, 
+  VoiceStatusResponse,
+  CommandResult,
+  ProviderInfo
+} from '../types';
+
+export type { ProviderInfo };
 
 const API_BASE_URL = 'http://127.0.0.1:8000/api';
 
@@ -26,12 +34,6 @@ export async function getVoiceStatus(): Promise<VoiceStatusResponse> {
   return response.json();
 }
 
-export interface ProviderInfo {
-  name: string;
-  available: boolean;
-  models: string[];
-}
-
 export async function getAIProviders(): Promise<ProviderInfo[]> {
   const response = await fetch(`${API_BASE_URL}/chat/providers`);
   if (!response.ok) {
@@ -39,6 +41,21 @@ export async function getAIProviders(): Promise<ProviderInfo[]> {
   }
   const data = await response.json();
   return data.providers || [];
+}
+
+export async function executeCommand(
+  text: string,
+  provider?: string
+): Promise<CommandResult> {
+  const response = await fetch(`${API_BASE_URL}/commands/execute`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ text, provider }),
+  });
+  if (!response.ok) {
+    throw new Error(`Command execution failed: ${response.status}`);
+  }
+  return response.json();
 }
 
 export async function sendChatMessage(

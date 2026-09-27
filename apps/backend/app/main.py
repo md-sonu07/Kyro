@@ -2,7 +2,7 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from app.core.config import settings
 from app.core.logging import logger
-from app.api.routes import system, chat, agent, browser, voice
+from app.api.routes import system, chat, agent, browser, voice, commands
 from app.api import websocket
 
 app = FastAPI(
@@ -23,6 +23,7 @@ app.add_middleware(
 
 # Include API Routers
 app.include_router(system.router, prefix="/api")
+app.include_router(commands.router, prefix="/api")
 app.include_router(chat.router, prefix="/api")
 app.include_router(agent.router, prefix="/api")
 app.include_router(browser.router, prefix="/api")
