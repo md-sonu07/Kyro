@@ -8,34 +8,31 @@ export default {
   theme: {
     extend: {
       colors: {
-        background: '#0B0F19',
-        surface: '#111827',
-        'surface-hover': '#1F2937',
-        card: '#131D31',
-        border: '#1F2E4D',
-        primary: {
-          50: '#EEF2FF',
-          100: '#E0E7FF',
-          400: '#818CF8',
-          500: '#6366F1',
-          600: '#4F46E5',
-          700: '#4338CA',
-        },
-        accent: {
-          cyan: '#06B6D4',
-          violet: '#8B5CF6',
-          emerald: '#10B981',
-          amber: '#F59E0B',
-          rose: '#F43F5E',
+        background: '#F7F3ED',
+        surface: '#FFFFFF',
+        sidebar: '#FAF7F2',
+        border: '#EBE5DC',
+        'border-subtle': '#F0EBE3',
+        card: '#FFFFFF',
+        'card-hover': '#FDFBF7',
+        'warm-accent': '#E08035',
+        'warm-badge': '#FBF0E4',
+        'warm-badge-text': '#B45309',
+        text: {
+          main: '#18181B',
+          secondary: '#71717A',
+          muted: '#8E887F',
         }
       },
       fontFamily: {
-        sans: ['Inter', 'system-ui', '-apple-system', 'BlinkMacSystemFont', 'sans-serif'],
-        mono: ['JetBrains Mono', 'Fira Code', 'monospace'],
+        sans: ['Plus Jakarta Sans', 'Inter', 'system-ui', '-apple-system', 'sans-serif'],
+        mono: ['JetBrains Mono', 'monospace'],
       },
       boxShadow: {
-        'glow': '0 0 25px -5px rgba(99, 102, 241, 0.3)',
-        'glow-cyan': '0 0 25px -5px rgba(6, 182, 212, 0.3)',
+        'soft': '0 4px 20px -2px rgba(0, 0, 0, 0.04), 0 2px 6px -1px rgba(0, 0, 0, 0.02)',
+        'card': '0 2px 12px -2px rgba(0, 0, 0, 0.03), 0 1px 4px -1px rgba(0, 0, 0, 0.02)',
+        'hero': '0 12px 36px -4px rgba(180, 150, 120, 0.12), 0 4px 16px -2px rgba(0, 0, 0, 0.04)',
+        'glow-warm': '0 0 30px 2px rgba(245, 158, 11, 0.15)',
       }
     },
   },

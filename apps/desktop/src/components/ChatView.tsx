@@ -1,16 +1,18 @@
-import { useState, useEffect, useRef } from 'react';
-import { 
-  Send, 
-  Bot, 
-  User, 
-  Sparkles, 
-  Cpu, 
-  Trash2, 
-  Mic, 
-  Zap,
+import React, { useState, useEffect, useRef } from 'react';
+import {
+  ArrowUp,
+  Bot,
+  Mic,
+  MicOff,
+  Paperclip,
+  Plus,
   Globe,
+  Trash2,
   Volume2
 } from 'lucide-react';
+import { HeroView } from './HeroView';
+import { ModelDropdown } from './ModelDropdown';
+import { ThinkingBlock } from './ThinkingBlock';
 import { streamChatMessage, executeCommand, getAIProviders, ProviderInfo } from '../services/api';
 import { ChatMessage } from '../types';
 
@@ -18,21 +20,16 @@ interface ChatViewProps {
   onOpenVoicePopup?: () => void;
 }
 
-export const ChatView = ({ onOpenVoicePopup }: ChatViewProps) => {
-  const [messages, setMessages] = useState<ChatMessage[]>([
-    {
-      id: 'welcome',
-      role: 'assistant',
-      content: "Hello! I'm **Kyro**, your fast voice & desktop assistant on macOS.\n\n⚡ **Fast Command Router** is active! You can say or type:\n• *\"open chrome\"* or *\"open vscode\"*\n• *\"search for Next.js 15 tutorials\"*\n• *\"mute\"* or *\"set volume 50\"*\n• Or ask any programming / general question to stream AI answers.",
-      timestamp: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
-      provider: 'fast_router',
-    },
-  ]);
+export const ChatView: React.FC<ChatViewProps> = () => {
+  const [messages, setMessages] = useState<ChatMessage[]>([]);
   const [input, setInput] = useState('');
   const [isStreaming, setIsStreaming] = useState(false);
+  const [isListening, setIsListening] = useState(false);
+  const [voiceSpeechEnabled, setVoiceSpeechEnabled] = useState(true);
   const [providers, setProviders] = useState<ProviderInfo[]>([]);
   const [selectedProvider, setSelectedProvider] = useState<string>('ollama');
   const messagesEndRef = useRef<HTMLDivElement>(null);
+  const recognitionRef = useRef<any>(null);
 
   const scrollToBottom = () => {
     messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
@@ -42,7 +39,7 @@ export const ChatView = ({ onOpenVoicePopup }: ChatViewProps) => {
     scrollToBottom();
   }, [messages, isStreaming]);
 
-  // Load available AI providers on mount and periodically refresh
+  // Load available AI providers
   useEffect(() => {
     const refreshProviders = () => {
       getAIProviders()
@@ -53,13 +50,62 @@ export const ChatView = ({ onOpenVoicePopup }: ChatViewProps) => {
             setSelectedProvider(available.name);
           }
         })
-        .catch(() => {});
+        .catch(() => { });
     };
 
     refreshProviders();
     const interval = setInterval(refreshProviders, 10000);
     return () => clearInterval(interval);
   }, [selectedProvider]);
+
+  // Web Speech API for Push-to-Talk
+  useEffect(() => {
+    const SpeechRecognition = (window as any).SpeechRecognition || (window as any).webkitSpeechRecognition;
+    if (SpeechRecognition) {
+      const recognition = new SpeechRecognition();
+      recognition.continuous = false;
+      recognition.interimResults = false;
+      recognition.lang = 'en-US';
+
+      recognition.onresult = (event: any) => {
+        const transcript = event.results[0][0].transcript;
+        setInput(transcript);
+        setIsListening(false);
+        handleSend(transcript);
+      };
+
+      recognition.onerror = () => setIsListening(false);
+      recognition.onend = () => setIsListening(false);
+      recognitionRef.current = recognition;
+    }
+  }, []);
+
+  const toggleVoice = () => {
+    if (!recognitionRef.current) {
+      alert("Microphone recognition is available in Chrome/Electron.");
+      return;
+    }
+    if (isListening) {
+      recognitionRef.current.stop();
+      setIsListening(false);
+    } else {
+      setInput('');
+      setIsListening(true);
+      try {
+        recognitionRef.current.start();
+      } catch {
+        setIsListening(false);
+      }
+    }
+  };
+
+  const speakReply = (text: string) => {
+    if (!voiceSpeechEnabled || !window.speechSynthesis) return;
+    window.speechSynthesis.cancel();
+    const utterance = new SpeechSynthesisUtterance(text);
+    utterance.rate = 1.05;
+    window.speechSynthesis.speak(utterance);
+  };
 
   const handleSend = async (textToSend?: string) => {
     const text = textToSend || input;
@@ -95,15 +141,16 @@ export const ChatView = ({ onOpenVoicePopup }: ChatViewProps) => {
           prev.map((m) =>
             m.id === assistantMsgId
               ? {
-                  ...m,
-                  content: cmdResult.text_response,
-                  intentType: cmdResult.intent_type,
-                  actionExecuted: cmdResult.action_executed,
-                  executionTimeMs: cmdResult.execution_time_ms,
-                }
+                ...m,
+                content: cmdResult.text_response,
+                intentType: cmdResult.intent_type,
+                actionExecuted: cmdResult.action_executed,
+                executionTimeMs: cmdResult.execution_time_ms,
+              }
               : m
           )
         );
+        speakReply(cmdResult.voice_response);
         setIsStreaming(false);
         return;
       }
@@ -114,24 +161,27 @@ export const ChatView = ({ onOpenVoicePopup }: ChatViewProps) => {
         content: m.content,
       }));
 
+      let fullAnswer = '';
       await streamChatMessage(
         history,
         selectedProvider,
         (chunk) => {
+          fullAnswer += chunk;
           setMessages((prev) =>
             prev.map((m) =>
               m.id === assistantMsgId
                 ? {
-                    ...m,
-                    content: m.content + chunk,
-                    intentType: 'AI_QUERY',
-                  }
+                  ...m,
+                  content: m.content + chunk,
+                  intentType: 'AI_QUERY',
+                }
                 : m
             )
           );
         },
         () => {
           setIsStreaming(false);
+          speakReply(fullAnswer.slice(0, 160));
         },
         (err) => {
           setMessages((prev) =>
@@ -164,114 +214,104 @@ export const ChatView = ({ onOpenVoicePopup }: ChatViewProps) => {
   };
 
   const clearChat = () => {
-    setMessages([
-      {
-        id: `welcome-${Date.now()}`,
-        role: 'assistant',
-        content: 'Chat session cleared. Say or type a command to continue.',
-        timestamp: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
-      },
-    ]);
+    setMessages([]);
   };
 
-  const quickShortcuts = [
-    { label: "open chrome", icon: Globe },
-    { label: "open vscode", icon: Zap },
-    { label: "search for React 19 features", icon: Globe },
-    { label: "mute", icon: Volume2 },
-    { label: "what is TypeScript?", icon: Bot },
-  ];
+  // If no conversation yet, render Hero View
+  if (messages.length === 0) {
+    return (
+      <HeroView
+        onSendMessage={handleSend}
+        selectedProvider={selectedProvider}
+        setSelectedProvider={setSelectedProvider}
+        providers={providers}
+      />
+    );
+  }
 
   return (
-    <div className="flex flex-col h-full bg-background/50 relative overflow-hidden">
-      {/* Top Bar with Provider Selector & Voice Popup Trigger */}
-      <div className="h-14 border-b border-border/60 bg-surface/40 backdrop-blur-md px-6 flex items-center justify-between z-10 select-none">
-        <div className="flex items-center gap-3">
-          <div className="flex items-center gap-2 text-sm font-semibold text-white">
-            <Sparkles className="w-4 h-4 text-primary-400" />
-            <span>Kyro Voice & Assistant Hub</span>
-          </div>
-
+    <div className="flex flex-col h-full relative overflow-hidden select-none font-sans">
+      {/* Top action header */}
+      <div className="h-12 border-b border-[#EBE5DC] bg-[#FAF7F2]/80 backdrop-blur-md px-6 flex items-center justify-between z-10">
+        <div className="flex items-center gap-2">
           <button
-            onClick={onOpenVoicePopup}
-            className="flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-medium bg-gradient-to-r from-primary-600 to-accent-cyan text-white shadow-glow hover:scale-105 transition-all"
+            onClick={clearChat}
+            className="text-xs font-semibold text-[#18181B] hover:text-[#D97706] transition-colors flex items-center gap-1.5 cursor-pointer"
           >
-            <Mic className="w-3.5 h-3.5 text-white" />
-            <span>Open Voice Assistant (⌘K)</span>
+            ← New Conversation
           </button>
         </div>
 
         <div className="flex items-center gap-3">
-          {/* Provider selector pill */}
-          <div className="flex items-center gap-2 bg-slate-900/80 border border-border px-3 py-1.5 rounded-xl text-xs">
-            <Cpu className="w-3.5 h-3.5 text-accent-cyan" />
-            <span className="text-slate-400">Model:</span>
-            <select
-              value={selectedProvider}
-              onChange={(e) => setSelectedProvider(e.target.value)}
-              className="bg-transparent text-slate-200 font-medium focus:outline-none cursor-pointer"
-            >
-              {providers.length > 0 ? (
-                providers.map((p) => (
-                  <option key={p.name} value={p.name} className="bg-surface text-slate-200">
-                    {p.name === 'ollama' ? '🦙 Ollama Local' : p.name === 'openai' ? '☁️ Cloud OpenAI' : '⚡ Kyro Fast Engine'} {p.available ? '(Ready)' : '(Offline)'}
-                  </option>
-                ))
-              ) : (
-                <>
-                  <option value="ollama" className="bg-surface text-slate-200">🦙 Ollama Local</option>
-                  <option value="openai" className="bg-surface text-slate-200">☁️ Cloud OpenAI</option>
-                  <option value="mock" className="bg-surface text-slate-200">⚡ Kyro Fast Engine</option>
-                </>
-              )}
-            </select>
-          </div>
+          <button
+            onClick={() => setVoiceSpeechEnabled(!voiceSpeechEnabled)}
+            className={`p-1.5 rounded-lg border text-xs transition-colors cursor-pointer ${voiceSpeechEnabled
+                ? 'bg-[#FEF3C7] text-[#D97706] border-[#FDE68A]'
+                : 'bg-[#FFFFFF] text-[#A1A1AA] border-[#EBE5DC]'
+              }`}
+            title="Toggle voice output"
+          >
+            <Volume2 className="w-3.5 h-3.5" />
+          </button>
 
           <button
             onClick={clearChat}
             title="Clear conversation"
-            className="p-1.5 rounded-lg text-slate-400 hover:text-slate-200 hover:bg-surface border border-transparent hover:border-border transition-colors"
+            className="p-1.5 rounded-lg text-[#71717A] hover:text-[#18181B] hover:bg-[#F2ECE3] transition-colors cursor-pointer"
           >
-            <Trash2 className="w-4 h-4" />
+            <Trash2 className="w-3.5 h-3.5" />
           </button>
         </div>
       </div>
 
       {/* Messages Scroll Area */}
-      <div className="flex-1 overflow-y-auto p-6 space-y-6">
+      <div className="flex-1 overflow-y-auto p-6 space-y-5 max-w-4xl mx-auto w-full">
         {messages.map((msg) => {
           const isUser = msg.role === 'user';
-          return (
-            <div
-              key={msg.id}
-              className={`flex gap-3.5 ${isUser ? 'justify-end' : 'justify-start'}`}
-            >
-              {!isUser && (
-                <div className="w-8 h-8 rounded-xl bg-gradient-to-br from-primary-500 to-accent-violet flex items-center justify-center shadow-glow shrink-0 mt-1">
-                  <Bot className="w-4 h-4 text-white" />
+          return isUser ? (
+            /* User Sent Message (Right aligned) */
+            <div key={msg.id} className="flex flex-col items-end space-y-1.5 max-w-[65%] ml-auto">
+              {/* Top Header: Time + Name + Avatar */}
+              <div className="flex items-center gap-2 pr-1">
+                <span className="text-[11px] text-[#71717A] font-medium">{msg.timestamp}</span>
+                <span className="text-xs font-bold text-[#18181B]">Danish</span>
+                <div className="w-8 h-8 rounded-full bg-[#18181B] text-white flex items-center justify-center font-bold text-[11px] shadow-xs">
+                  D
                 </div>
-              )}
+              </div>
 
-              <div
-                className={`max-w-[80%] rounded-2xl px-4 py-3 text-sm leading-relaxed ${
-                  isUser
-                    ? 'bg-primary-600 text-white rounded-br-sm shadow-md'
-                    : 'glass-card border border-border text-slate-200 rounded-bl-sm'
-                }`}
-              >
+              {/* Bubble Content Card */}
+              <div className="bg-[#EFF6FF] border border-[#DBEAFE] text-[#1E3A8A] rounded-lg px-4 py-3 text-xs leading-relaxed shadow-xs w-full">
+                <div className="whitespace-pre-wrap font-sans">{msg.content}</div>
+              </div>
+            </div>
+          ) : (
+            /* Assistant Received Message (Left aligned) */
+            <div key={msg.id} className="flex flex-col items-start space-y-1.5 max-w-[85%]">
+              {/* Top Header: Avatar + Name + Time */}
+              <div className="flex items-center gap-2 pl-1">
+                <div className="w-8 h-8 rounded-full bg-gradient-to-br from-[#18181B] to-[#3F3F46] text-white flex items-center justify-center font-bold text-xs shadow-xs">
+                  <Bot className="w-3.5 h-3.5 text-[#F59E0B]" />
+                </div>
+                <span className="text-xs font-bold text-[#18181B]">Kyro AI</span>
+                <span className="text-[11px] text-[#71717A] font-medium">{msg.timestamp}</span>
+              </div>
+
+              {/* Bubble Content Card */}
+              <div className="bg-[#FFFFFF] border border-[#EAE4DB] text-[#18181B] rounded-lg px-4 py-3.5 text-xs leading-relaxed shadow-sm w-full space-y-2">
                 {/* Fast Action Indicator Pill */}
                 {msg.intentType && msg.intentType !== 'AI_QUERY' && (
                   <div className="flex items-center gap-2 mb-2">
-                    <span className="px-2 py-0.5 rounded font-mono text-[10px] font-bold bg-emerald-500/20 text-emerald-400 border border-emerald-500/30">
+                    <span className="px-2 py-0.5 rounded font-mono text-[10px] font-bold bg-[#FEF3C7] text-[#D97706] border border-[#FDE68A]">
                       ⚡ {msg.intentType}
                     </span>
                     {msg.actionExecuted && (
-                      <span className="text-slate-400 font-mono text-[11px]">
+                      <span className="text-[#71717A] font-mono text-[11px]">
                         ↳ {msg.actionExecuted}
                       </span>
                     )}
                     {msg.executionTimeMs !== undefined && (
-                      <span className="text-slate-500 font-mono text-[10px] ml-auto">
+                      <span className="text-[#A1A1AA] font-mono text-[10px] ml-auto">
                         {msg.executionTimeMs}ms
                       </span>
                     )}
@@ -280,92 +320,89 @@ export const ChatView = ({ onOpenVoicePopup }: ChatViewProps) => {
 
                 {/* Content */}
                 <div className="whitespace-pre-wrap font-sans">
-                  {msg.content || (
-                    <span className="inline-flex items-center gap-1.5 text-slate-400 text-xs font-mono py-1">
-                      <span className="w-2 h-2 rounded-full bg-primary-400 animate-ping" />
-                      Executing...
-                    </span>
-                  )}
-                </div>
-
-                <div
-                  className={`text-[10px] mt-2 flex items-center gap-2 ${
-                    isUser ? 'text-primary-200 justify-end' : 'text-slate-500 justify-start'
-                  }`}
-                >
-                  <span>{msg.timestamp}</span>
-                  {msg.provider && (
-                    <span className="font-mono uppercase text-[9px] bg-slate-900/60 px-1.5 py-0.5 rounded border border-border/60">
-                      {msg.provider}
+                  {msg.content ? (
+                    <ThinkingBlock content={msg.content} />
+                  ) : (
+                    <span className="inline-flex items-center gap-1.5 text-[#71717A] text-xs font-mono py-1">
+                      <span className="w-2 h-2 rounded-full bg-[#D97706] animate-ping" />
+                      Processing...
                     </span>
                   )}
                 </div>
               </div>
-
-              {isUser && (
-                <div className="w-8 h-8 rounded-xl bg-slate-800 border border-border flex items-center justify-center shrink-0 mt-1">
-                  <User className="w-4 h-4 text-slate-300" />
-                </div>
-              )}
             </div>
           );
         })}
         <div ref={messagesEndRef} />
       </div>
 
-      {/* Quick Action Shortcuts */}
-      {messages.length <= 2 && (
-        <div className="px-6 pb-2 flex flex-wrap gap-2">
-          {quickShortcuts.map((sc, idx) => (
-            <button
-              key={idx}
-              onClick={() => handleSend(sc.label)}
-              className="flex items-center gap-1.5 text-xs text-slate-300 hover:text-white bg-surface/80 hover:bg-surface border border-border px-3 py-1.5 rounded-full transition-all font-mono"
-            >
-              <sc.icon className="w-3.5 h-3.5 text-accent-cyan" />
-              <span>{sc.label}</span>
-            </button>
-          ))}
-        </div>
-      )}
-
-      {/* Input Area */}
-      <div className="p-4 bg-surface/60 backdrop-blur-md border-t border-border/80">
-        <form
-          onSubmit={(e) => {
-            e.preventDefault();
-            handleSend();
-          }}
-          className="relative max-w-4xl mx-auto flex items-end gap-2 bg-slate-950/80 border border-border rounded-2xl p-2 shadow-xl focus-within:border-primary-500 transition-colors"
-        >
+      {/* Floating Bottom Input matching screenshot */}
+      <div className="p-4 max-w-4xl mx-auto w-full">
+        <div className="bg-[#FFFFFF] rounded-xl border border-[#E5DFD5] shadow-hero p-3 space-y-2">
           <textarea
             value={input}
             onChange={(e) => setInput(e.target.value)}
             onKeyDown={handleKeyDown}
-            placeholder="Say or type a command ('open chrome', 'search for...', 'what is react?')..."
+            placeholder={isListening ? "Listening to your voice..." : "Type your message or command..."}
             rows={1}
-            className="flex-1 bg-transparent px-3 py-2 text-sm text-slate-100 placeholder:text-slate-500 focus:outline-none resize-none max-h-32 min-h-[40px]"
+            className="w-full bg-transparent resize-none text-sm text-[#18181B] placeholder-[#A1A1AA] focus:outline-none px-2 font-sans max-h-32 min-h-[36px]"
           />
 
-          <div className="flex items-center gap-1">
-            <button
-              type="button"
-              onClick={onOpenVoicePopup}
-              title="Open Voice Popup Assistant (⌘K)"
-              className="p-2 rounded-xl text-accent-cyan hover:bg-surface transition-colors"
-            >
-              <Mic className="w-4 h-4" />
-            </button>
+          <div className="flex items-center justify-between pt-1 border-t border-[#F4EFEA]">
+            <div className="flex items-center gap-1 text-[#71717A]">
+              <button
+                type="button"
+                className="p-1.5 rounded-lg hover:bg-[#F6F2EC] hover:text-[#18181B] transition-colors cursor-pointer"
+              >
+                <Plus className="w-4 h-4" />
+              </button>
 
-            <button
-              type="submit"
-              disabled={!input.trim() || isStreaming}
-              className="p-2.5 rounded-xl bg-primary-600 hover:bg-primary-500 text-white font-medium transition-all shadow-glow disabled:opacity-40 disabled:cursor-not-allowed"
-            >
-              <Send className="w-4 h-4" />
-            </button>
+              <button
+                type="button"
+                className="p-1.5 rounded-lg hover:bg-[#F6F2EC] hover:text-[#18181B] transition-colors cursor-pointer"
+              >
+                <Paperclip className="w-4 h-4" />
+              </button>
+
+              <button
+                type="button"
+                className="p-1.5 rounded-lg hover:bg-[#F6F2EC] hover:text-[#18181B] transition-colors cursor-pointer"
+              >
+                <Globe className="w-4 h-4" />
+              </button>
+
+              <button
+                type="button"
+                onClick={toggleVoice}
+                className={`p-1.5 rounded-lg transition-all cursor-pointer ${isListening
+                    ? 'bg-[#EF4444] text-white shadow-sm animate-pulse'
+                    : 'hover:bg-[#F6F2EC] hover:text-[#18181B]'
+                  }`}
+              >
+                {isListening ? <MicOff className="w-4 h-4" /> : <Mic className="w-4 h-4" />}
+              </button>
+            </div>
+
+            <div className="flex items-center gap-2">
+              <ModelDropdown
+                selectedProvider={selectedProvider}
+                onSelectProvider={setSelectedProvider}
+                size="sm"
+              />
+
+              <button
+                type="button"
+                onClick={() => {
+                  if (input.trim()) handleSend(input.trim());
+                }}
+                disabled={!input.trim() || isStreaming}
+                className="w-7 h-7 rounded-full bg-[#E5DFD5] disabled:opacity-40 enabled:bg-[#18181B] text-white flex items-center justify-center transition-all enabled:hover:scale-105 cursor-pointer shadow-sm"
+              >
+                <ArrowUp className="w-3.5 h-3.5" />
+              </button>
+            </div>
           </div>
-        </form>
+        </div>
       </div>
     </div>
   );

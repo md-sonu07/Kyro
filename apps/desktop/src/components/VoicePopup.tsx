@@ -1,16 +1,16 @@
 import React, { useState, useEffect, useRef } from 'react';
-import { 
-  Mic, 
-  MicOff, 
-  Send, 
-  Zap, 
-  Volume2, 
-  Globe, 
-  Folder, 
-  Sliders, 
-  Bot, 
-  Sparkles, 
-  X, 
+import {
+  Mic,
+  MicOff,
+  Send,
+  Zap,
+  Volume2,
+  Globe,
+  Folder,
+  Sliders,
+  Bot,
+  Sparkles,
+  X,
   Loader2
 } from 'lucide-react';
 import { executeCommand } from '../services/api';
@@ -28,7 +28,7 @@ export const VoicePopup: React.FC<VoicePopupProps> = ({ isOpen, onClose, selecte
   const [loading, setLoading] = useState(false);
   const [lastResult, setLastResult] = useState<CommandResult | null>(null);
   const [voiceSpeechEnabled, setVoiceSpeechEnabled] = useState(true);
-  
+
   const recognitionRef = useRef<any>(null);
   const inputRef = useRef<HTMLInputElement>(null);
 
@@ -105,7 +105,7 @@ export const VoicePopup: React.FC<VoicePopupProps> = ({ isOpen, onClose, selecte
       const res = await executeCommand(text, selectedProvider);
       setLastResult(res);
       setInput('');
-      
+
       // Speak the voice response
       if (res.voice_response) {
         speakReply(res.voice_response);
@@ -141,8 +141,8 @@ export const VoicePopup: React.FC<VoicePopupProps> = ({ isOpen, onClose, selecte
       <div className="absolute inset-0" onClick={onClose} />
 
       {/* Floating Spotlight Card */}
-      <div className="relative w-full max-w-xl mx-4 rounded-3xl glass-panel border border-primary-500/40 p-5 shadow-2xl space-y-4 z-10 animate-slideDown">
-        
+      <div className="relative w-full max-w-xl mx-4 rounded-xl glass-panel border border-primary-500/40 p-5 shadow-2xl space-y-4 z-10 animate-slideDown">
+
         {/* Top Header Controls */}
         <div className="flex items-center justify-between border-b border-border/60 pb-3">
           <div className="flex items-center gap-2">
@@ -161,11 +161,10 @@ export const VoicePopup: React.FC<VoicePopupProps> = ({ isOpen, onClose, selecte
             <button
               onClick={() => setVoiceSpeechEnabled(!voiceSpeechEnabled)}
               title={voiceSpeechEnabled ? "Voice Output Enabled" : "Voice Output Muted"}
-              className={`p-1.5 rounded-lg border text-xs transition-colors ${
-                voiceSpeechEnabled 
-                  ? 'bg-primary-500/20 text-primary-400 border-primary-500/30'
-                  : 'bg-surface text-slate-500 border-border'
-              }`}
+              className={`p-1.5 rounded-lg border text-xs transition-colors ${voiceSpeechEnabled
+                ? 'bg-primary-500/20 text-primary-400 border-primary-500/30'
+                : 'bg-surface text-slate-500 border-border'
+                }`}
             >
               <Volume2 className="w-4 h-4" />
             </button>
@@ -184,17 +183,16 @@ export const VoicePopup: React.FC<VoicePopupProps> = ({ isOpen, onClose, selecte
             e.preventDefault();
             handleRunCommand();
           }}
-          className="relative flex items-center gap-3 bg-slate-900/90 border border-primary-500/50 rounded-2xl px-4 py-3 shadow-inner focus-within:border-primary-400 transition-all"
+          className="relative flex items-center gap-3 bg-slate-900/90 border border-primary-500/50 rounded-xl px-4 py-3 shadow-inner focus-within:border-primary-400 transition-all"
         >
           {/* Push-to-Talk Mic Button */}
           <button
             type="button"
             onClick={toggleListening}
-            className={`p-2 rounded-xl transition-all ${
-              isListening
-                ? 'bg-rose-500 text-white shadow-lg shadow-rose-500/30 animate-pulse scale-105'
-                : 'bg-primary-500/20 hover:bg-primary-500/30 text-primary-400 border border-primary-500/30'
-            }`}
+            className={`p-2 rounded-xl transition-all ${isListening
+              ? 'bg-rose-500 text-white shadow-lg shadow-rose-500/30 animate-pulse scale-105'
+              : 'bg-primary-500/20 hover:bg-primary-500/30 text-primary-400 border border-primary-500/30'
+              }`}
           >
             {isListening ? <MicOff className="w-4 h-4" /> : <Mic className="w-4 h-4" />}
           </button>
@@ -233,15 +231,14 @@ export const VoicePopup: React.FC<VoicePopupProps> = ({ isOpen, onClose, selecte
 
         {/* Fast Command Feedback Result */}
         {lastResult && (
-          <div className="p-3.5 rounded-2xl bg-slate-900/90 border border-border/80 space-y-2 animate-fadeIn text-xs">
+          <div className="p-3.5 rounded-xl bg-slate-900/90 border border-border/80 space-y-2 animate-fadeIn text-xs">
             <div className="flex items-center justify-between">
               <div className="flex items-center gap-2">
-                <span className={`px-2 py-0.5 rounded font-mono text-[10px] font-bold ${
-                  lastResult.intent_type === 'OPEN_APP' ? 'bg-emerald-500/20 text-emerald-400 border border-emerald-500/30' :
+                <span className={`px-2 py-0.5 rounded font-mono text-[10px] font-bold ${lastResult.intent_type === 'OPEN_APP' ? 'bg-emerald-500/20 text-emerald-400 border border-emerald-500/30' :
                   lastResult.intent_type === 'SEARCH_WEB' ? 'bg-accent-cyan/20 text-accent-cyan border border-accent-cyan/30' :
-                  lastResult.intent_type === 'GREETING' ? 'bg-primary-500/20 text-primary-400 border border-primary-500/30' :
-                  'bg-accent-violet/20 text-accent-violet border border-accent-violet/30'
-                }`}>
+                    lastResult.intent_type === 'GREETING' ? 'bg-primary-500/20 text-primary-400 border border-primary-500/30' :
+                      'bg-accent-violet/20 text-accent-violet border border-accent-violet/30'
+                  }`}>
                   {lastResult.intent_type}
                 </span>
                 {lastResult.action_executed && (

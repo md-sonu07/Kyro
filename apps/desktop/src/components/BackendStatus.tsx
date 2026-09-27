@@ -1,12 +1,12 @@
 import React, { useState, useEffect } from 'react';
-import { 
-  CheckCircle2, 
-  XCircle, 
-  RefreshCw, 
-  Server, 
-  Cpu, 
-  Send, 
-  Zap, 
+import {
+  CheckCircle2,
+  XCircle,
+  RefreshCw,
+  Server,
+  Cpu,
+  Send,
+  Zap,
   Terminal as TerminalIcon,
   Layers,
   Bot
@@ -18,7 +18,7 @@ export const BackendStatus: React.FC = () => {
   const [health, setHealth] = useState<BackendHealthResponse | null>(null);
   const [sysInfo, setSysInfo] = useState<SystemInfoResponse | null>(null);
   const [loading, setLoading] = useState(false);
-  
+
   // Interactive test states
   const [testInput, setTestInput] = useState('Hello Kyro! Test connection.');
   const [testResponse, setTestResponse] = useState<string | null>(null);
@@ -63,7 +63,7 @@ export const BackendStatus: React.FC = () => {
   return (
     <div className="p-8 max-w-6xl mx-auto space-y-8 overflow-y-auto max-h-full">
       {/* Hero Welcome Banner */}
-      <div className="relative overflow-hidden rounded-2xl bg-gradient-to-r from-primary-900/40 via-surface to-slate-900 border border-border p-8 shadow-xl">
+      <div className="relative overflow-hidden rounded-xl bg-gradient-to-r from-primary-900/40 via-surface to-slate-900 border border-border p-8 shadow-xl">
         <div className="absolute -right-10 -bottom-10 w-64 h-64 bg-primary-500/10 rounded-full blur-3xl pointer-events-none" />
         <div className="relative z-10 flex flex-col md:flex-row md:items-center justify-between gap-6">
           <div>
@@ -91,7 +91,7 @@ export const BackendStatus: React.FC = () => {
       {/* Status Grid */}
       <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
         {/* Card 1: Connection Health */}
-        <div className="p-6 rounded-2xl glass-card border border-border flex flex-col justify-between space-y-4">
+        <div className="p-6 rounded-xl glass-card border border-border flex flex-col justify-between space-y-4">
           <div className="flex items-start justify-between">
             <div className="p-2.5 rounded-xl bg-primary-500/10 border border-primary-500/20 text-primary-400">
               <Server className="w-5 h-5" />
@@ -127,7 +127,7 @@ export const BackendStatus: React.FC = () => {
         </div>
 
         {/* Card 2: Runtime Engine */}
-        <div className="p-6 rounded-2xl glass-card border border-border flex flex-col justify-between space-y-4">
+        <div className="p-6 rounded-xl glass-card border border-border flex flex-col justify-between space-y-4">
           <div className="flex items-start justify-between">
             <div className="p-2.5 rounded-xl bg-accent-cyan/10 border border-accent-cyan/20 text-accent-cyan">
               <Cpu className="w-5 h-5" />
@@ -155,7 +155,7 @@ export const BackendStatus: React.FC = () => {
         </div>
 
         {/* Card 3: Architecture Layers */}
-        <div className="p-6 rounded-2xl glass-card border border-border flex flex-col justify-between space-y-4">
+        <div className="p-6 rounded-xl glass-card border border-border flex flex-col justify-between space-y-4">
           <div className="flex items-start justify-between">
             <div className="p-2.5 rounded-xl bg-accent-violet/10 border border-accent-violet/20 text-accent-violet">
               <Layers className="w-5 h-5" />
@@ -182,7 +182,7 @@ export const BackendStatus: React.FC = () => {
       </div>
 
       {/* Interactive React ↔ FastAPI Bridge Test */}
-      <div className="p-6 rounded-2xl glass-panel border border-border space-y-4">
+      <div className="p-6 rounded-xl glass-panel border border-border space-y-4">
         <div className="flex items-center gap-2">
           <TerminalIcon className="w-5 h-5 text-primary-400" />
           <h2 className="text-lg font-bold text-white">Live Frontend ↔ Backend Bridge Test</h2>
